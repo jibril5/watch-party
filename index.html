@@ -1,21 +1,51 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
   <title>Watch Party</title>
+
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
   <div class="container">
 
-    <h1>Watch Party</h1>
+    <h1>🎬 Watch Party</h1>
 
-    <input id="videoUrl" placeholder="URL vidéo MP4" />
-    <button id="startBtn">Lancer le film</button>
-    <button id="syncBtn">SYNC</button>
+    <input
+      id="videoUrl"
+      placeholder="URL vidéo MP4"
+    />
 
-    <video id="video" controls></video>
+    <div class="buttons">
+
+      <button id="hostBtn">
+        ▶️ Lancer
+      </button>
+
+      <button id="joinBtn">
+        👥 Rejoindre
+      </button>
+
+      <button id="syncBtn">
+        🔄 Resync
+      </button>
+
+    </div>
+
+    <div class="status" id="status">
+      En attente...
+    </div>
+
+    <video
+      id="video"
+      controls
+      playsinline
+      webkit-playsinline
+    ></video>
 
   </div>
 
