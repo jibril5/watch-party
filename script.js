@@ -3,11 +3,10 @@ import {
   getDatabase,
   ref,
   set,
-  onValue,
-  push
+  onValue
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-// 🔴 METS TA CONFIG FIREBASE ICI
+// 🔴 TA CONFIG FIREBASE ICI
   const firebaseConfig = {
     apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
     authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -18,37 +17,28 @@ import {
     measurementId: "G-Y99MTG84DC"
   };
 
-
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const roomIdInput = document.getElementById("roomId");
-const joinBtn = document.getElementById("joinBtn");
-const hostBtn = document.getElementById("hostBtn");
+// 🔗 CANAL UNIQUE (2 personnes)
+const offerRef = ref(db, "call/offer");
+const answerRef = ref(db, "call/answer");
+const candidatesRef = ref(db, "call/candidates");
+
 const fileInput = document.getElementById("fileInput");
+const hostBtn = document.getElementById("hostBtn");
 const video = document.getElementById("video");
 
 let pc;
-let isHost = false;
-let localStream;
 
-const configuration = {
+const config = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
-function getRoomRef(roomId) {
-  return ref(db, "rooms/" + roomId);
-}
-
-// ----------------------
-// 🟢 HOST
-// ----------------------
+//
+// 🟢 HOST (toi)
+//
 hostBtn.onclick = async () => {
-  const roomId = roomIdInput.value;
-  if (!roomId) return alert("Room ID requis");
-
-  isHost = true;
-
   const file = fileInput.files[0];
   if (!file) return alert("Choisis un film");
 
@@ -56,83 +46,65 @@ hostBtn.onclick = async () => {
   video.src = url;
   await video.play();
 
-  localStream = video.captureStream();
+  const stream = video.captureStream();
 
-  pc = new RTCPeerConnection(configuration);
+  pc = new RTCPeerConnection(config);
 
-  localStream.getTracks().forEach(track => {
-    pc.addTrack(track, localStream);
+  stream.getTracks().forEach(track => {
+    pc.addTrack(track, stream);
   });
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      push(getRoomRef(roomId + "/candidates"), event.candidate.toJSON());
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      set(candidatesRef, e.candidate.toJSON());
     }
   };
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  await set(getRoomRef(roomId + "/offer"), offer);
+  set(offerRef, offer);
 
-  onValue(getRoomRef(roomId + "/answer"), async (snap) => {
+  onValue(answerRef, async (snap) => {
     const answer = snap.val();
-    if (!answer) return;
-
-    await pc.setRemoteDescription(answer);
-  });
-
-  onValue(getRoomRef(roomId + "/candidates"), (snap) => {
-    const data = snap.val();
-    if (!data) return;
-
-    Object.values(data).forEach(async (c) => {
-      try {
-        await pc.addIceCandidate(c);
-      } catch (e) {}
-    });
-  });
-};
-
-// ----------------------
-// 🔵 VIEWER
-// ----------------------
-joinBtn.onclick = async () => {
-  const roomId = roomIdInput.value;
-  if (!roomId) return alert("Room ID requis");
-
-  pc = new RTCPeerConnection(configuration);
-
-  pc.ontrack = (event) => {
-    video.srcObject = event.streams[0];
-  };
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      push(getRoomRef(roomId + "/candidates"), event.candidate.toJSON());
+    if (answer) {
+      await pc.setRemoteDescription(answer);
     }
-  };
-
-  const offerSnap = await onValue(getRoomRef(roomId + "/offer"), async (snap) => {
-    const offer = snap.val();
-    if (!offer) return;
-
-    await pc.setRemoteDescription(offer);
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    await set(getRoomRef(roomId + "/answer"), answer);
-  });
-
-  onValue(getRoomRef(roomId + "/candidates"), (snap) => {
-    const data = snap.val();
-    if (!data) return;
-
-    Object.values(data).forEach(async (c) => {
-      try {
-        await pc.addIceCandidate(c);
-      } catch (e) {}
-    });
   });
 };
+
+//
+// 🔵 VIEWER (ton ami)
+//
+pc = new RTCPeerConnection(config);
+
+pc.ontrack = (e) => {
+  video.srcObject = e.streams[0];
+};
+
+pc.onicecandidate = (e) => {
+  if (e.candidate) {
+    set(candidatesRef, e.candidate.toJSON());
+  }
+};
+
+onValue(offerRef, async (snap) => {
+  const offer = snap.val();
+  if (!offer) return;
+
+  await pc.setRemoteDescription(offer);
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  set(answerRef, answer);
+});
+
+onValue(candidatesRef, async (snap) => {
+  const c = snap.val();
+  if (!c) return;
+
+  try {
+    await pc.addIceCandidate(c);
+  } catch (e) {}
+});
