@@ -1,20 +1,25 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lecteur Film</title>
-
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Watch Party WebRTC</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <div class="container">
-    <h1>Lecteur Film</h1>
+    <h1>Watch Party WebRTC</h1>
 
-    <input type="file" id="fileInput" accept="video/*,.mkv">
+    <input id="roomId" placeholder="Room ID" />
+    <button id="joinBtn">Rejoindre</button>
 
-    <video id="video" controls></video>
+    <hr />
+
+    <input type="file" id="fileInput" accept="video/*,.mkv" />
+    <button id="hostBtn">Devenir Host</button>
+
+    <video id="video" controls autoplay></video>
   </div>
 
   <script type="module" src="script.js"></script>
