@@ -6,15 +6,18 @@ import {
   onValue
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
-    authDomain: "watch-party-d3f69.firebaseapp.com",
-    projectId: "watch-party-d3f69",
-    storageBucket: "watch-party-d3f69.firebasestorage.app",
-    messagingSenderId: "568073707307",
-    appId: "1:568073707307:web:b45e8f9e3f4770c09fef6e",
-    measurementId: "G-Y99MTG84DC"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
+  authDomain: "watch-party-d3f69.firebaseapp.com",
+
+  databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
+
+  projectId: "watch-party-d3f69",
+  storageBucket: "watch-party-d3f69.firebasestorage.app",
+  messagingSenderId: "568073707307",
+  appId: "1:568073707307:web:b45e8f9e3f4770c09fef6e",
+  measurementId: "G-Y99MTG84DC"
+};
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
