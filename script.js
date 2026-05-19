@@ -14,7 +14,6 @@ const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
 
-  // ⚠️ REMPLACE par TON URL exacte Firebase
   databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
 
   projectId: "watch-party-d3f69",
@@ -41,6 +40,7 @@ const stateRef = ref(db, "movieState");
 const video = document.getElementById("video");
 const urlInput = document.getElementById("videoUrl");
 const startBtn = document.getElementById("startBtn");
+const syncBtn = document.getElementById("syncBtn");
 
 //
 // 🛑 Evite boucle sync
@@ -50,8 +50,9 @@ let syncing = false;
 //
 // 📤 Envoie état vers Firebase
 //
-function sendState() {
-  if (syncing) return;
+function sendState(force = false) {
+
+  if (syncing && !force) return;
 
   set(stateRef, {
     url: video.src,
@@ -65,6 +66,7 @@ function sendState() {
 // ▶️ Lancer film
 //
 startBtn.onclick = async () => {
+
   const url = urlInput.value.trim();
 
   if (!url) return;
@@ -72,6 +74,7 @@ startBtn.onclick = async () => {
   video.src = url;
 
   try {
+
     await video.play();
 
     set(stateRef, {
@@ -84,6 +87,18 @@ startBtn.onclick = async () => {
   } catch (e) {
     console.error(e);
   }
+};
+
+//
+// 🔄 BOUTON SYNC
+// force tous les viewers à revenir EXACTEMENT
+// au temps actuel du host
+//
+syncBtn.onclick = () => {
+
+  sendState(true);
+
+  console.log("SYNC envoyé");
 };
 
 //
@@ -146,7 +161,7 @@ onValue(stateRef, async (snap) => {
   //
   // 🎯 Correction seulement si gros décalage
   //
-  if (Math.abs(video.currentTime - targetTime) > 1.5) {
+  if (Math.abs(video.currentTime - targetTime) > 1) {
     video.currentTime = targetTime;
   }
 
