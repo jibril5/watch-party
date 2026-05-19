@@ -1,24 +1,24 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Watch Party Simple</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <title>Watch Party</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <div class="container">
+
     <h1>Watch Party</h1>
 
-    <input type="file" id="fileInput" accept="video/*,.mkv" />
-    <button id="hostBtn">Lancer la vidéo (Host)</button>
+    <input id="videoUrl" placeholder="URL vidéo MP4" />
+    <button id="startBtn">Lancer le film</button>
 
-    <p>Ton ami doit juste ouvrir le site et attendre.</p>
+    <video id="video" controls></video>
 
-    <video id="video" controls autoplay></video>
   </div>
 
   <script type="module" src="script.js"></script>
+
 </body>
 </html>
