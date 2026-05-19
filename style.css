@@ -11,13 +11,13 @@ body {
   padding: 20px;
 }
 
-input, button {
-  padding: 10px;
-  margin: 5px;
-}
-
 video {
   width: 100%;
   margin-top: 20px;
   background: black;
+}
+
+button, input {
+  margin: 5px;
+  padding: 10px;
 }
