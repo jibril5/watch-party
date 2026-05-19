@@ -3,10 +3,10 @@ import {
   getDatabase,
   ref,
   set,
+  push,
   onValue
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-// 🔴 TA CONFIG FIREBASE ICI
   const firebaseConfig = {
     apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
     authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -20,7 +20,7 @@ import {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// 🔗 CANAL UNIQUE (2 personnes)
+// 🔗 FIX : candidates devient une LISTE
 const offerRef = ref(db, "call/offer");
 const answerRef = ref(db, "call/answer");
 const candidatesRef = ref(db, "call/candidates");
@@ -36,7 +36,7 @@ const config = {
 };
 
 //
-// 🟢 HOST (toi)
+// 🟢 HOST
 //
 hostBtn.onclick = async () => {
   const file = fileInput.files[0];
@@ -56,7 +56,7 @@ hostBtn.onclick = async () => {
 
   pc.onicecandidate = (e) => {
     if (e.candidate) {
-      set(candidatesRef, e.candidate.toJSON());
+      push(candidatesRef, e.candidate.toJSON());
     }
   };
 
@@ -67,14 +67,14 @@ hostBtn.onclick = async () => {
 
   onValue(answerRef, async (snap) => {
     const answer = snap.val();
-    if (answer) {
+    if (answer && !pc.currentRemoteDescription) {
       await pc.setRemoteDescription(answer);
     }
   });
 };
 
 //
-// 🔵 VIEWER (ton ami)
+// 🔵 VIEWER
 //
 pc = new RTCPeerConnection(config);
 
@@ -84,10 +84,11 @@ pc.ontrack = (e) => {
 
 pc.onicecandidate = (e) => {
   if (e.candidate) {
-    set(candidatesRef, e.candidate.toJSON());
+    push(candidatesRef, e.candidate.toJSON());
   }
 };
 
+// 👉 recevoir offer
 onValue(offerRef, async (snap) => {
   const offer = snap.val();
   if (!offer) return;
@@ -100,11 +101,14 @@ onValue(offerRef, async (snap) => {
   set(answerRef, answer);
 });
 
+// 👉 recevoir candidates (IMPORTANT FIX)
 onValue(candidatesRef, async (snap) => {
-  const c = snap.val();
-  if (!c) return;
+  const data = snap.val();
+  if (!data) return;
 
-  try {
-    await pc.addIceCandidate(c);
-  } catch (e) {}
+  Object.values(data).forEach(async (c) => {
+    try {
+      await pc.addIceCandidate(c);
+    } catch (e) {}
+  });
 });
