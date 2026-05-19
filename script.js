@@ -4,7 +4,8 @@ import {
   getDatabase,
   ref,
   set,
-  onValue
+  onValue,
+  get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 //
@@ -64,7 +65,47 @@ let syncing = false;
 // 📢 Status
 //
 function setStatus(text) {
+
   statusEl.innerText = text;
+}
+
+//
+// ⏱️ Wait helpers
+//
+function wait(ms) {
+
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function waitVideoReady() {
+
+  return new Promise(resolve => {
+
+    if (video.readyState >= 2) {
+
+      resolve();
+
+      return;
+    }
+
+    video.addEventListener(
+      "loadeddata",
+      resolve,
+      { once: true }
+    );
+  });
+}
+
+function waitSeeked() {
+
+  return new Promise(resolve => {
+
+    video.addEventListener(
+      "seeked",
+      resolve,
+      { once: true }
+    );
+  });
 }
 
 //
@@ -89,7 +130,7 @@ async function pushState() {
 }
 
 //
-// ▶️ HOST start
+// ▶️ HOST START
 //
 hostBtn.onclick = async () => {
 
@@ -101,20 +142,26 @@ hostBtn.onclick = async () => {
 
   setStatus("🎬 HOST");
 
-  video.src = url;
-
-  await waitVideoReady();
+  syncing = true;
 
   try {
 
+    video.src = url;
+
+    await waitVideoReady();
+
     await video.play();
+
+    await pushState();
 
   } catch (e) {
 
     console.error(e);
-  }
 
-  pushState();
+  } finally {
+
+    syncing = false;
+  }
 };
 
 //
@@ -122,14 +169,16 @@ hostBtn.onclick = async () => {
 //
 joinBtn.onclick = async () => {
 
+  isHost = false;
+
   setStatus("👥 VIEWER");
 
+  //
+  // IMPORTANT iPhone :
+  // débloque autoplay
+  //
   try {
 
-    //
-    // IMPORTANT iPhone
-    // interaction utilisateur
-    //
     await video.play();
 
     video.pause();
@@ -137,72 +186,41 @@ joinBtn.onclick = async () => {
   } catch (e) {}
 
   //
-  // sync forcée
+  // sync immédiate
   //
-  forceSync();
+  await forceSync();
 };
 
 //
 // 🔄 RESYNC
 //
-syncBtn.onclick = () => {
+syncBtn.onclick = async () => {
 
   if (isHost) {
 
-    pushState();
+    await pushState();
 
     setStatus("🔄 Sync envoyée");
 
   } else {
 
-    forceSync();
+    await forceSync();
 
     setStatus("🔄 Resync");
   }
 };
 
 //
-// ⏱️ Wait video ready
+// 🎯 VRAIE sync iPhone-safe
 //
-function waitVideoReady() {
-
-  return new Promise(resolve => {
-
-    if (video.readyState >= 2) {
-
-      resolve();
-
-      return;
-    }
-
-    video.addEventListener(
-      "loadeddata",
-      resolve,
-      { once: true }
-    );
-  });
-}
-
-//
-// 👂 Viewer écoute Firebase
-//
-onValue(roomRef, async snap => {
-
-  const data = snap.val();
-
-  if (!data) return;
-
-  //
-  // host ignore
-  //
-  if (isHost) return;
+async function applySync(data) {
 
   syncing = true;
 
   try {
 
     //
-    // nouvelle vidéo
+    // 📺 Nouvelle vidéo
     //
     if (video.src !== data.url) {
 
@@ -212,7 +230,7 @@ onValue(roomRef, async snap => {
     }
 
     //
-    // calcul temps exact
+    // ⏱️ Temps cible
     //
     const latency =
       (Date.now() - data.updatedAt) / 1000;
@@ -221,18 +239,39 @@ onValue(roomRef, async snap => {
       data.time + latency;
 
     //
-    // corriger si décalage
+    // 🛑 pause avant seek
     //
-    const drift =
-      Math.abs(video.currentTime - target);
+    video.pause();
 
-    if (drift > 0.5) {
+    //
+    // 🎯 FORCE SEEK
+    //
+    video.currentTime = target;
+
+    //
+    // attendre vrai seek Safari
+    //
+    await waitSeeked();
+
+    //
+    // 🔥 double correction iPhone
+    //
+    if (
+      Math.abs(video.currentTime - target) > 0.3
+    ) {
 
       video.currentTime = target;
+
+      await waitSeeked();
     }
 
     //
-    // lecture sync
+    // mini délai safari
+    //
+    await wait(100);
+
+    //
+    // ▶️ lecture
     //
     if (!data.paused) {
 
@@ -242,17 +281,10 @@ onValue(roomRef, async snap => {
 
       } catch (e) {
 
-        //
-        // iPhone autoplay block
-        //
         setStatus(
           "📱 Clique sur Rejoindre"
         );
       }
-
-    } else {
-
-      video.pause();
     }
 
   } catch (e) {
@@ -267,52 +299,63 @@ onValue(roomRef, async snap => {
 
     }, 300);
   }
-});
+}
 
 //
-// 🔄 Force sync viewer
+// 👂 Firebase listener
 //
-async function forceSync() {
-
-  const snap = await new Promise(resolve => {
-
-    onValue(
-      roomRef,
-      resolve,
-      { onlyOnce: true }
-    );
-  });
+onValue(roomRef, async snap => {
 
   const data = snap.val();
 
   if (!data) return;
 
-  if (video.src !== data.url) {
+  //
+  // host ignore
+  //
+  if (isHost) return;
 
-    video.src = data.url;
+  //
+  // éviter spam sync
+  //
+  if (syncing) return;
 
-    await waitVideoReady();
-  }
-
+  //
+  // drift check
+  //
   const latency =
     (Date.now() - data.updatedAt) / 1000;
 
-  video.currentTime =
+  const target =
     data.time + latency;
 
-  if (!data.paused) {
+  const drift =
+    Math.abs(video.currentTime - target);
 
-    try {
+  //
+  // sync seulement si vrai écart
+  //
+  if (
+    video.src !== data.url ||
+    drift > 1.2
+  ) {
 
-      await video.play();
-
-    } catch (e) {
-
-      setStatus(
-        "📱 Clique sur Rejoindre"
-      );
-    }
+    await applySync(data);
   }
+});
+
+//
+// 🔄 Force sync
+//
+async function forceSync() {
+
+  const snap = await get(roomRef);
+
+  const data = snap.val();
+
+  if (!data) return;
+
+  await applySync(data);
 }
 
 //
@@ -320,30 +363,33 @@ async function forceSync() {
 //
 video.addEventListener("play", () => {
 
-  if (isHost && !syncing) {
+  if (!isHost) return;
 
-    pushState();
-  }
+  if (syncing) return;
+
+  pushState();
 });
 
 video.addEventListener("pause", () => {
 
-  if (isHost && !syncing) {
+  if (!isHost) return;
 
-    pushState();
-  }
+  if (syncing) return;
+
+  pushState();
 });
 
 video.addEventListener("seeked", () => {
 
-  if (isHost && !syncing) {
+  if (!isHost) return;
 
-    pushState();
-  }
+  if (syncing) return;
+
+  pushState();
 });
 
 //
-// ⏱️ Sync permanente host
+// ⏱️ Sync permanente HOST
 //
 setInterval(() => {
 
@@ -353,4 +399,4 @@ setInterval(() => {
 
   pushState();
 
-}, 1000);
+}, 1500);
