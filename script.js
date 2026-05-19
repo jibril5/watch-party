@@ -1,118 +1,138 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-
 import {
   getDatabase,
   ref,
   set,
-  onValue
+  onValue,
+  push
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
+// 🔴 METS TA CONFIG FIREBASE ICI
   const firebaseConfig = {
-
     apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
-
     authDomain: "watch-party-d3f69.firebaseapp.com",
-
-    databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
-
     projectId: "watch-party-d3f69",
-
     storageBucket: "watch-party-d3f69.firebasestorage.app",
-
     messagingSenderId: "568073707307",
-
     appId: "1:568073707307:web:b45e8f9e3f4770c09fef6e",
-
     measurementId: "G-Y99MTG84DC"
-
   };
 
 
 const app = initializeApp(firebaseConfig);
-
 const db = getDatabase(app);
 
-const stateRef = ref(db, "state");
-
+const roomIdInput = document.getElementById("roomId");
+const joinBtn = document.getElementById("joinBtn");
+const hostBtn = document.getElementById("hostBtn");
 const fileInput = document.getElementById("fileInput");
-
 const video = document.getElementById("video");
 
-let ignore = false;
+let pc;
+let isHost = false;
+let localStream;
 
-fileInput.addEventListener("change", (event) => {
+const configuration = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+};
 
-  const file = event.target.files[0];
+function getRoomRef(roomId) {
+  return ref(db, "rooms/" + roomId);
+}
 
-  if (!file) return;
+// ----------------------
+// 🟢 HOST
+// ----------------------
+hostBtn.onclick = async () => {
+  const roomId = roomIdInput.value;
+  if (!roomId) return alert("Room ID requis");
+
+  isHost = true;
+
+  const file = fileInput.files[0];
+  if (!file) return alert("Choisis un film");
 
   const url = URL.createObjectURL(file);
-
   video.src = url;
+  await video.play();
 
-  video.play();
+  localStream = video.captureStream();
 
-});
+  pc = new RTCPeerConnection(configuration);
 
-video.addEventListener("play", () => {
-
-  if (ignore) return;
-
-  set(stateRef, {
-    action: "play",
-    time: video.currentTime
+  localStream.getTracks().forEach(track => {
+    pc.addTrack(track, localStream);
   });
 
-});
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      push(getRoomRef(roomId + "/candidates"), event.candidate.toJSON());
+    }
+  };
 
-video.addEventListener("pause", () => {
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
 
-  if (ignore) return;
+  await set(getRoomRef(roomId + "/offer"), offer);
 
-  set(stateRef, {
-    action: "pause",
-    time: video.currentTime
+  onValue(getRoomRef(roomId + "/answer"), async (snap) => {
+    const answer = snap.val();
+    if (!answer) return;
+
+    await pc.setRemoteDescription(answer);
   });
 
-});
+  onValue(getRoomRef(roomId + "/candidates"), (snap) => {
+    const data = snap.val();
+    if (!data) return;
 
-video.addEventListener("seeked", () => {
+    Object.values(data).forEach(async (c) => {
+      try {
+        await pc.addIceCandidate(c);
+      } catch (e) {}
+    });
+  });
+};
 
-  if (ignore) return;
+// ----------------------
+// 🔵 VIEWER
+// ----------------------
+joinBtn.onclick = async () => {
+  const roomId = roomIdInput.value;
+  if (!roomId) return alert("Room ID requis");
 
-  set(stateRef, {
-    action: "seek",
-    time: video.currentTime
+  pc = new RTCPeerConnection(configuration);
+
+  pc.ontrack = (event) => {
+    video.srcObject = event.streams[0];
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      push(getRoomRef(roomId + "/candidates"), event.candidate.toJSON());
+    }
+  };
+
+  const offerSnap = await onValue(getRoomRef(roomId + "/offer"), async (snap) => {
+    const offer = snap.val();
+    if (!offer) return;
+
+    await pc.setRemoteDescription(offer);
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    await set(getRoomRef(roomId + "/answer"), answer);
   });
 
-});
+  onValue(getRoomRef(roomId + "/candidates"), (snap) => {
+    const data = snap.val();
+    if (!data) return;
 
-onValue(stateRef, (snapshot) => {
-
-  const data = snapshot.val();
-
-  if (!data) return;
-
-  ignore = true;
-
-  video.currentTime = data.time;
-
-  if (data.action === "play") {
-
-    video.play();
-
-  }
-
-  if (data.action === "pause") {
-
-    video.pause();
-
-  }
-
-  setTimeout(() => {
-
-    ignore = false;
-
-  }, 200);
-
-});
+    Object.values(data).forEach(async (c) => {
+      try {
+        await pc.addIceCandidate(c);
+      } catch (e) {}
+    });
+  });
+};
