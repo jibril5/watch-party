@@ -7,7 +7,7 @@ import {
   get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-// 🔥 Firebase Config
+// 🔥 Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -22,35 +22,37 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const roomRef = ref(db, "room");
 
-// 🕒 Temps Serveur
+// 🕒 Synchronisation de l'horloge avec le serveur Firebase (CRUCIAL)
 let serverTimeOffset = 0;
 const offsetRef = ref(db, ".info/serverTimeOffset");
 onValue(offsetRef, (snap) => {
   serverTimeOffset = snap.val() || 0;
 });
 
+// Retourne l'heure exacte et synchronisée pour tous les utilisateurs
 function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
 
-// 🎥 Éléments HTML
+// 🎥 HTML
 const video = document.getElementById("video");
 const videoUrl = document.getElementById("videoUrl");
 const hostBtn = document.getElementById("hostBtn");
 const joinBtn = document.getElementById("joinBtn");
 const syncBtn = document.getElementById("syncBtn");
 const statusEl = document.getElementById("status");
-const videoOverlay = document.getElementById("videoOverlay");
 
-// 🎭 État Global de l'application
+// 🎭 State
 let isHost = false;
-let syncing = false; // Devient true quand une opération de synchronisation automatique est en cours
-let lastServerState = null; // Stocke le dernier état valide dicté par l'hôte
+let syncing = false;
+let forceMutedForAutoplay = false; // Nécessaire pour iOS
 
+// 📢 Status
 function setStatus(text) {
   statusEl.innerText = text;
 }
 
+// ⏱️ Wait helpers
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 function waitVideoReady() {
@@ -66,7 +68,7 @@ function waitSeeked() {
   });
 }
 
-// 📤 Émission de l'état (RÉSERVÉ À L'HÔTE)
+// 📤 HOST -> Firebase
 async function pushState() {
   if (!isHost || !video.src || syncing) return;
 
@@ -74,19 +76,18 @@ async function pushState() {
     url: video.src,
     time: video.currentTime,
     paused: video.paused,
-    updatedAt: getNetworkTime()
+    updatedAt: getNetworkTime() // On utilise l'heure réseau !
   });
 }
 
-// 👑 Action : Devenir Hôte
+// ▶️ HOST START
 hostBtn.onclick = async () => {
   const url = videoUrl.value.trim();
   if (!url) return alert("Veuillez entrer une URL vidéo.");
 
   isHost = true;
-  videoOverlay.classList.add("hidden"); // L'hôte n'a pas de restriction de clic
-  setStatus("👑 Mode : Hôte");
-  syncing = true;
+  setStatus("👑 Hôte (Envoi de la synchro)");
+  syncing = true; // Empêche les boucles d'événements pendant l'init
 
   try {
     video.src = url;
@@ -94,158 +95,126 @@ hostBtn.onclick = async () => {
     await video.play();
     await pushState();
   } catch (e) {
-    console.error(e);
-    setStatus("❌ Erreur de lecture vidéo");
+    console.error("Erreur de lancement :", e);
+    setStatus("❌ Erreur de lecture");
   } finally {
     syncing = false;
   }
 };
 
-// 👥 Action : Rejoindre en tant que Spectateur
+// 👥 JOIN
 joinBtn.onclick = async () => {
   isHost = false;
-  videoOverlay.classList.remove("hidden"); // On active la barrière anti-clic pour le viewer
-  setStatus("👥 Mode : Spectateur (Synchronisé)");
+  setStatus("👥 Spectateur (Synchronisé)");
 
-  // Déblocage obligatoire du moteur audio/vidéo d'iOS Safari par interaction utilisateur
+  // IMPORTANT iOS : Débloque la vidéo avec une interaction utilisateur
   try {
-    video.muted = true; 
+    video.muted = true; // Mute garantit l'autorisation de lecture sur iOS
+    forceMutedForAutoplay = true;
     await video.play();
     video.pause();
-    setStatus("👥 Spectateur (Audio coupé pour Autoplay, réactivez le son si besoin)");
   } catch (e) {
-    console.warn("Autoplay restreint détecté", e);
+    console.warn("Autoplay initial bloqué", e);
   }
 
   await forceSync();
 };
 
-// 🔄 Bouton de resynchronisation manuelle
+// 🔄 RESYNC
 syncBtn.onclick = async () => {
   if (isHost) {
     await pushState();
-    setStatus("👑 Sync hôte rafraîchie");
+    setStatus("👑 Hôte (Sync forcée envoyée)");
   } else {
     await forceSync();
-    setStatus("👥 Resync spectateur effectuée");
+    setStatus("👥 Spectateur (Resync manuelle)");
   }
 };
 
-// 🎯 Application de l'état reçu depuis Firebase (Pour les Viewers)
+// 🎯 VRAIE sync robuste
 async function applySync(data) {
-  syncing = true; // On verrouille l'écouteur d'événements locaux pour éviter les boucles infinies
+  syncing = true; // Verrouille les événements locaux
 
   try {
+    // 1. Nouvelle vidéo ?
     if (video.src !== data.url) {
       video.src = data.url;
       await waitVideoReady();
     }
 
+    // 2. Calcul du temps cible
     const latency = (getNetworkTime() - data.updatedAt) / 1000;
+    
+    // CORRECTION BUG MAJEUR : on n'ajoute la latence QUE si la vidéo est en cours de lecture
     const target = data.paused ? data.time : data.time + latency;
+
+    // 3. Application du temps si l'écart est significatif (> 0.5s)
     const drift = Math.abs(video.currentTime - target);
-
-    // Si l'écart de temps ou d'état de lecture est trop grand, on réajuste
-    if (drift > 0.6 || video.paused !== data.paused) {
-      
-      if (video.paused !== data.paused) {
-        data.paused ? video.pause() : tryPlay();
-      }
-
+    
+    if (drift > 0.5 || video.paused !== data.paused) {
+      video.pause();
       video.currentTime = target;
       await waitSeeked();
-
-      // Double vérification spécifique aux lenteurs de Safari iOS
+      
+      // Double correction pour les navigateurs capricieux (Safari)
       if (Math.abs(video.currentTime - target) > 0.3) {
         video.currentTime = target;
         await waitSeeked();
       }
 
+      // 4. Gestion Play/Pause
       if (!data.paused) {
-        await tryPlay();
+        try {
+          await video.play();
+          if (forceMutedForAutoplay) {
+             setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
+             forceMutedForAutoplay = false; // Affiche le message une seule fois
+          }
+        } catch (e) {
+          setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
+        }
       } else {
         video.pause();
       }
     }
   } catch (e) {
-    console.error("Erreur d'application de synchro", e);
+    console.error("Erreur de synchronisation:", e);
   } finally {
-    // Petit délai de sécurité avant de déverrouiller
-    setTimeout(() => { syncing = false; }, 250);
+    // On libère le verrou avec un léger délai pour ignorer les événements résiduels
+    setTimeout(() => { syncing = false; }, 300);
   }
 }
 
-async function tryPlay() {
-  try {
-    await video.play();
-  } catch (e) {
-    setStatus("📱 Lecture bloquée par le système. Appuyez sur Resync.");
-  }
-}
-
-// 👂 Écouteur Firebase en temps réel
-onValue(roomRef, async (snap) => {
+// 👂 Firebase listener (Spectateurs uniquement)
+onValue(roomRef, async snap => {
   const data = snap.val();
-  if (!data) return;
-  
-  lastServerState = data; // On garde en mémoire l'état officiel de l'hôte
-
-  if (isHost || syncing) return;
+  if (!data || isHost || syncing) return;
 
   const latency = (getNetworkTime() - data.updatedAt) / 1000;
   const target = data.paused ? data.time : data.time + latency;
   const drift = Math.abs(video.currentTime - target);
 
+  // Tolérance plus stricte (0.8s) pour une synchro "Pro"
   if (video.src !== data.url || drift > 0.8 || video.paused !== data.paused) {
     await applySync(data);
   }
 });
 
+// 🔄 Force sync
 async function forceSync() {
   const snap = await get(roomRef);
   const data = snap.val();
-  if (data) {
-    lastServerState = data;
-    await applySync(data);
-  }
+  if (data) await applySync(data);
 }
 
-// ========================================================
-// 🛡️ SÉCURISATION ET GESTION DES ÉVÉNEMENTS VIDÉO
-// ========================================================
+// 🎮 HOST controls
+video.addEventListener("play", pushState);
+video.addEventListener("pause", pushState);
+video.addEventListener("seeked", pushState);
 
-function handleViewerTampering(eventName) {
-  // Si le viewer essaie de modifier l'état (play, pause, seek), on le remet à l'ordre immédiatement
-  if (!isHost && !syncing && lastServerState) {
-    console.warn(`[Protection] Action '${eventName}' bloquée sur le spectateur. Alignement sur l'hôte.`);
-    applySync(lastServerState);
-  }
-}
-
-// Événements déclenchés par l'Hôte -> On pousse sur Firebase
-// Événements déclenchés par le Viewer -> On bloque et on réaligne
-video.addEventListener("play", () => {
-  if (isHost) pushState();
-  else handleViewerTampering("play");
-});
-
-video.addEventListener("pause", () => {
-  if (isHost) pushState();
-  else handleViewerTampering("pause");
-});
-
-video.addEventListener("seeking", () => {
-  if (!isHost) handleViewerTampering("seeking");
-});
-
-video.addEventListener("seeked", () => {
-  if (isHost) pushState();
-  else handleViewerTampering("seeked");
-});
-
-// ⏱️ Heartbeat permanent de l'hôte (toutes les 2 secondes)
+// ⏱️ Sync permanente HOST (Heartbeat)
 setInterval(() => {
-  if (isHost && !video.paused && !syncing) {
+  if (isHost && !video.paused) {
     pushState();
   }
 }, 2000);
