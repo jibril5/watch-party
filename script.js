@@ -8,235 +8,251 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 //
-// 🔥 Firebase config
+// 🔥 Firebase
 //
 const firebaseConfig = {
+
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
+
   authDomain: "watch-party-d3f69.firebaseapp.com",
 
-  // ⚠️ Remplace si besoin par ton URL exacte
-  databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
+  databaseURL:
+    "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
 
   projectId: "watch-party-d3f69",
+
   storageBucket: "watch-party-d3f69.firebasestorage.app",
+
   messagingSenderId: "568073707307",
-  appId: "1:568073707307:web:b45e8f9e3f4770c09fef6e",
-  measurementId: "G-Y99MTG84DC"
+
+  appId:
+    "1:568073707307:web:b45e8f9e3f4770c09fef6e"
 };
 
 //
-// 🚀 Init Firebase
+// 🚀 Init
 //
 const app = initializeApp(firebaseConfig);
+
 const db = getDatabase(app);
 
-//
-// 🎬 Référence DB
-//
-const stateRef = ref(db, "movieState");
+const roomRef = ref(db, "room");
 
 //
-// 🎥 Elements HTML
+// 🎥 HTML
 //
 const video = document.getElementById("video");
-const urlInput = document.getElementById("videoUrl");
-const startBtn = document.getElementById("startBtn");
+
+const videoUrl = document.getElementById("videoUrl");
+
+const hostBtn = document.getElementById("hostBtn");
+
+const joinBtn = document.getElementById("joinBtn");
+
 const syncBtn = document.getElementById("syncBtn");
 
+const statusEl = document.getElementById("status");
+
 //
-// 🛑 Evite boucle sync
+// 🎭 State
 //
+let isHost = false;
+
 let syncing = false;
 
 //
-// 📤 Envoie état Firebase
+// 📢 Status
 //
-function sendState(force = false) {
+function setStatus(text) {
+  statusEl.innerText = text;
+}
 
-  if (syncing && !force) return;
+//
+// 📤 HOST -> Firebase
+//
+async function pushState() {
 
-  set(stateRef, {
+  if (!isHost) return;
+
+  if (!video.src) return;
+
+  await set(roomRef, {
+
     url: video.src,
+
     time: video.currentTime,
-    playing: !video.paused,
-    lastUpdate: Date.now()
+
+    paused: video.paused,
+
+    updatedAt: Date.now()
   });
 }
 
 //
-// ▶️ Lancer film
+// ▶️ HOST start
 //
-startBtn.onclick = async () => {
+hostBtn.onclick = async () => {
 
-  const url = urlInput.value.trim();
+  const url = videoUrl.value.trim();
 
   if (!url) return;
 
+  isHost = true;
+
+  setStatus("🎬 HOST");
+
+  video.src = url;
+
+  await waitVideoReady();
+
   try {
 
-    syncing = true;
-
-    video.src = url;
-
-    //
-    // attendre chargement
-    //
-    await new Promise(resolve => {
-
-      video.addEventListener(
-        "loadedmetadata",
-        resolve,
-        { once: true }
-      );
-
-    });
-
     await video.play();
-
-    //
-    // envoyer état global
-    //
-    set(stateRef, {
-      url,
-      time: 0,
-      playing: true,
-      lastUpdate: Date.now()
-    });
 
   } catch (e) {
 
     console.error(e);
+  }
 
-  } finally {
+  pushState();
+};
 
-    setTimeout(() => {
-      syncing = false;
-    }, 500);
+//
+// 👥 JOIN
+//
+joinBtn.onclick = async () => {
+
+  setStatus("👥 VIEWER");
+
+  try {
+
+    //
+    // IMPORTANT iPhone
+    // interaction utilisateur
+    //
+    await video.play();
+
+    video.pause();
+
+  } catch (e) {}
+
+  //
+  // sync forcée
+  //
+  forceSync();
+};
+
+//
+// 🔄 RESYNC
+//
+syncBtn.onclick = () => {
+
+  if (isHost) {
+
+    pushState();
+
+    setStatus("🔄 Sync envoyée");
+
+  } else {
+
+    forceSync();
+
+    setStatus("🔄 Resync");
   }
 };
 
 //
-// 🔄 BOUTON SYNC
+// ⏱️ Wait video ready
 //
-syncBtn.onclick = () => {
+function waitVideoReady() {
 
-  sendState(true);
+  return new Promise(resolve => {
 
-  console.log("SYNC envoyé");
-};
+    if (video.readyState >= 2) {
 
-//
-// 🎮 Events vidéo
-//
-video.addEventListener("play", () => {
-  sendState();
-});
+      resolve();
 
-video.addEventListener("pause", () => {
-  sendState();
-});
+      return;
+    }
 
-video.addEventListener("seeked", () => {
-  sendState();
-});
+    video.addEventListener(
+      "loadeddata",
+      resolve,
+      { once: true }
+    );
+  });
+}
 
 //
-// ⏱️ Sync régulière
+// 👂 Viewer écoute Firebase
 //
-setInterval(() => {
-
-  if (syncing) return;
-  if (video.paused) return;
-  if (!video.src) return;
-
-  sendState();
-
-}, 2000);
-
-//
-// 👥 Réception Firebase
-//
-onValue(stateRef, async (snap) => {
+onValue(roomRef, async snap => {
 
   const data = snap.val();
 
   if (!data) return;
+
+  //
+  // host ignore
+  //
+  if (isHost) return;
 
   syncing = true;
 
   try {
 
     //
-    // 🎬 Nouvelle vidéo ?
+    // nouvelle vidéo
     //
-    const isNewVideo = video.src !== data.url;
-
-    if (isNewVideo) {
+    if (video.src !== data.url) {
 
       video.src = data.url;
 
-      //
-      // attendre chargement complet
-      //
-      await new Promise(resolve => {
-
-        video.addEventListener(
-          "loadedmetadata",
-          resolve,
-          { once: true }
-        );
-
-      });
-
-      //
-      // petit délai sécurité
-      //
-      await new Promise(r => setTimeout(r, 300));
+      await waitVideoReady();
     }
 
     //
-    // ⏱️ Calcul temps cible
+    // calcul temps exact
     //
-    const diff = (Date.now() - data.lastUpdate) / 1000;
+    const latency =
+      (Date.now() - data.updatedAt) / 1000;
 
-    const targetTime = data.time + diff;
+    const target =
+      data.time + latency;
 
     //
-    // 🎯 Corriger gros décalage
+    // corriger si décalage
     //
-    if (
-      isNaN(video.currentTime) ||
-      Math.abs(video.currentTime - targetTime) > 1
-    ) {
+    const drift =
+      Math.abs(video.currentTime - target);
+
+    if (drift > 0.5) {
+
+      video.currentTime = target;
+    }
+
+    //
+    // lecture sync
+    //
+    if (!data.paused) {
 
       try {
 
-        video.currentTime = targetTime;
+        await video.play();
 
       } catch (e) {
-        console.error(e);
-      }
-    }
 
-    //
-    // ▶️ / ⏸️ Sync lecture
-    //
-    if (data.playing) {
-
-      if (video.paused) {
-
-        try {
-          await video.play();
-        } catch (e) {
-          console.error(e);
-        }
+        //
+        // iPhone autoplay block
+        //
+        setStatus(
+          "📱 Clique sur Rejoindre"
+        );
       }
 
     } else {
 
-      if (!video.paused) {
-        video.pause();
-      }
+      video.pause();
     }
 
   } catch (e) {
@@ -245,12 +261,96 @@ onValue(stateRef, async (snap) => {
 
   } finally {
 
-    //
-    // 🔓 débloquer sync
-    //
     setTimeout(() => {
+
       syncing = false;
-    }, 500);
+
+    }, 300);
+  }
+});
+
+//
+// 🔄 Force sync viewer
+//
+async function forceSync() {
+
+  const snap = await new Promise(resolve => {
+
+    onValue(
+      roomRef,
+      resolve,
+      { onlyOnce: true }
+    );
+  });
+
+  const data = snap.val();
+
+  if (!data) return;
+
+  if (video.src !== data.url) {
+
+    video.src = data.url;
+
+    await waitVideoReady();
   }
 
+  const latency =
+    (Date.now() - data.updatedAt) / 1000;
+
+  video.currentTime =
+    data.time + latency;
+
+  if (!data.paused) {
+
+    try {
+
+      await video.play();
+
+    } catch (e) {
+
+      setStatus(
+        "📱 Clique sur Rejoindre"
+      );
+    }
+  }
+}
+
+//
+// 🎮 HOST controls
+//
+video.addEventListener("play", () => {
+
+  if (isHost && !syncing) {
+
+    pushState();
+  }
 });
+
+video.addEventListener("pause", () => {
+
+  if (isHost && !syncing) {
+
+    pushState();
+  }
+});
+
+video.addEventListener("seeked", () => {
+
+  if (isHost && !syncing) {
+
+    pushState();
+  }
+});
+
+//
+// ⏱️ Sync permanente host
+//
+setInterval(() => {
+
+  if (!isHost) return;
+
+  if (video.paused) return;
+
+  pushState();
+
+}, 1000);
