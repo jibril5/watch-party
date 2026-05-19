@@ -70,7 +70,7 @@ function setStatus(text) {
 }
 
 //
-// ⏱️ Wait helpers
+// ⏱️ Helpers
 //
 function wait(ms) {
 
@@ -165,7 +165,7 @@ hostBtn.onclick = async () => {
 };
 
 //
-// 👥 JOIN
+// 👥 JOIN VIEWER
 //
 joinBtn.onclick = async () => {
 
@@ -211,11 +211,9 @@ syncBtn.onclick = async () => {
 };
 
 //
-// 🎯 VRAIE sync iPhone-safe
+// 🎯 APPLY SYNC
 //
-async function applySync(data) {
-
-  syncing = true;
+async function applySync(data, force = false) {
 
   try {
 
@@ -224,9 +222,13 @@ async function applySync(data) {
     //
     if (video.src !== data.url) {
 
+      syncing = true;
+
       video.src = data.url;
 
       await waitVideoReady();
+
+      syncing = false;
     }
 
     //
@@ -238,42 +240,37 @@ async function applySync(data) {
     const target =
       data.time + latency;
 
-    //
-    // 🛑 pause avant seek
-    //
-    video.pause();
+    const drift =
+      target - video.currentTime;
 
     //
-    // 🎯 FORCE SEEK
+    // ⏸️ PAUSE PRIORITAIRE
     //
-    video.currentTime = target;
+    if (data.paused) {
 
-    //
-    // attendre vrai seek Safari
-    //
-    await waitSeeked();
+      if (!video.paused) {
 
-    //
-    // 🔥 double correction iPhone
-    //
-    if (
-      Math.abs(video.currentTime - target) > 0.3
-    ) {
+        video.pause();
+      }
 
-      video.currentTime = target;
+      //
+      // force position exacte pause
+      //
+      if (
+        Math.abs(drift) > 0.2 ||
+        force
+      ) {
 
-      await waitSeeked();
+        video.currentTime = target;
+      }
+
+      return;
     }
 
     //
-    // mini délai safari
+    // ▶️ PLAY PRIORITAIRE
     //
-    await wait(100);
-
-    //
-    // ▶️ lecture
-    //
-    if (!data.paused) {
+    if (video.paused) {
 
       try {
 
@@ -284,25 +281,94 @@ async function applySync(data) {
         setStatus(
           "📱 Clique sur Rejoindre"
         );
+
+        return;
       }
+    }
+
+    //
+    // 🔥 GROS DÉCALAGE
+    //
+    if (
+      Math.abs(drift) > 1.2 ||
+      force
+    ) {
+
+      syncing = true;
+
+      //
+      // safari iphone fix
+      //
+      video.pause();
+
+      await wait(50);
+
+      video.currentTime = target;
+
+      await waitSeeked();
+
+      //
+      // double seek iphone
+      //
+      if (
+        Math.abs(video.currentTime - target) > 0.3
+      ) {
+
+        video.currentTime = target;
+
+        await waitSeeked();
+      }
+
+      await wait(120);
+
+      try {
+
+        await video.play();
+
+      } catch (e) {}
+
+      syncing = false;
+
+      return;
+    }
+
+    //
+    // ⚡ Petit décalage :
+    // correction douce
+    //
+    if (Math.abs(drift) > 0.35) {
+
+      //
+      // retard
+      //
+      if (drift > 0) {
+
+        video.playbackRate = 1.10;
+
+      } else {
+
+        //
+        // avance
+        //
+        video.playbackRate = 0.90;
+      }
+
+    } else {
+
+      //
+      // sync parfaite
+      //
+      video.playbackRate = 1;
     }
 
   } catch (e) {
 
     console.error(e);
-
-  } finally {
-
-    setTimeout(() => {
-
-      syncing = false;
-
-    }, 300);
   }
 }
 
 //
-// 👂 Firebase listener
+// 👂 FIREBASE LISTENER
 //
 onValue(roomRef, async snap => {
 
@@ -320,32 +386,11 @@ onValue(roomRef, async snap => {
   //
   if (syncing) return;
 
-  //
-  // drift check
-  //
-  const latency =
-    (Date.now() - data.updatedAt) / 1000;
-
-  const target =
-    data.time + latency;
-
-  const drift =
-    Math.abs(video.currentTime - target);
-
-  //
-  // sync seulement si vrai écart
-  //
-  if (
-    video.src !== data.url ||
-    drift > 1.2
-  ) {
-
-    await applySync(data);
-  }
+  await applySync(data);
 });
 
 //
-// 🔄 Force sync
+// 🔄 FORCE RESYNC
 //
 async function forceSync() {
 
@@ -355,11 +400,11 @@ async function forceSync() {
 
   if (!data) return;
 
-  await applySync(data);
+  await applySync(data, true);
 }
 
 //
-// 🎮 HOST controls
+// 🎮 HOST CONTROLS
 //
 video.addEventListener("play", () => {
 
@@ -395,8 +440,8 @@ setInterval(() => {
 
   if (!isHost) return;
 
-  if (video.paused) return;
+  if (!video.src) return;
 
   pushState();
 
-}, 1500);
+}, 800);
