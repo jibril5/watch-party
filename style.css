@@ -1,6 +1,6 @@
 body {
   margin: 0;
-  background: #0f172a; /* Bleu nuit profond */
+  background: #0f172a;
   color: #f8fafc;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -90,4 +90,20 @@ button {
 video {
   width: 100%;
   display: block;
+}
+
+/* Couche de blocage pour empêcher le clic/double tap sur la vidéo (iOS/PC) */
+.video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 50px); /* Laisse environ 50px en bas pour l'accès aux contrôles natifs (volume/plein écran) */
+  z-index: 10;
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none !important;
 }
