@@ -23,11 +23,13 @@
     <div class="status-badge" id="status">En attente d'une action...</div>
 
     <div class="video-wrapper">
+      <div id="videoOverlay" class="video-overlay hidden"></div>
       <video
         id="video"
         controls
         playsinline
         webkit-playsinline
+        controlslist="nodownload"
       ></video>
     </div>
   </div>
