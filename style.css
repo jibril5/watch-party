@@ -2,25 +2,22 @@ body {
   margin: 0;
   background: #111;
   color: white;
-  font-family: Arial, sans-serif;
+  font-family: Arial;
 }
 
 .container {
-  max-width: 1000px;
+  max-width: 900px;
   margin: auto;
   padding: 20px;
 }
 
-h1 {
-  text-align: center;
+input, button {
+  padding: 10px;
+  margin: 5px;
 }
 
-#fileInput {
-  margin-bottom: 20px;
-}
-
-#video {
+video {
   width: 100%;
+  margin-top: 20px;
   background: black;
-  border-radius: 10px;
 }
