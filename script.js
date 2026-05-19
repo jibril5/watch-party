@@ -1,5 +1,4 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-
 import {
   getDatabase,
   ref,
@@ -8,440 +7,214 @@ import {
   get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-//
 // 🔥 Firebase
-//
 const firebaseConfig = {
-
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
-
   authDomain: "watch-party-d3f69.firebaseapp.com",
-
-  databaseURL:
-    "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
-
+  databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "watch-party-d3f69",
-
   storageBucket: "watch-party-d3f69.firebasestorage.app",
-
   messagingSenderId: "568073707307",
-
-  appId:
-    "1:568073707307:web:b45e8f9e3f4770c09fef6e"
+  appId: "1:568073707307:web:b45e8f9e3f4770c09fef6e"
 };
 
-//
-// 🚀 Init
-//
 const app = initializeApp(firebaseConfig);
-
 const db = getDatabase(app);
-
 const roomRef = ref(db, "room");
 
-//
+// 🕒 Synchronisation de l'horloge avec le serveur Firebase (CRUCIAL)
+let serverTimeOffset = 0;
+const offsetRef = ref(db, ".info/serverTimeOffset");
+onValue(offsetRef, (snap) => {
+  serverTimeOffset = snap.val() || 0;
+});
+
+// Retourne l'heure exacte et synchronisée pour tous les utilisateurs
+function getNetworkTime() {
+  return Date.now() + serverTimeOffset;
+}
+
 // 🎥 HTML
-//
 const video = document.getElementById("video");
-
 const videoUrl = document.getElementById("videoUrl");
-
 const hostBtn = document.getElementById("hostBtn");
-
 const joinBtn = document.getElementById("joinBtn");
-
 const syncBtn = document.getElementById("syncBtn");
-
 const statusEl = document.getElementById("status");
 
-//
 // 🎭 State
-//
 let isHost = false;
-
 let syncing = false;
+let forceMutedForAutoplay = false; // Nécessaire pour iOS
 
-//
 // 📢 Status
-//
 function setStatus(text) {
-
   statusEl.innerText = text;
 }
 
-//
-// ⏱️ Helpers
-//
-function wait(ms) {
-
-  return new Promise(r => setTimeout(r, ms));
-}
+// ⏱️ Wait helpers
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 function waitVideoReady() {
-
   return new Promise(resolve => {
-
-    if (video.readyState >= 2) {
-
-      resolve();
-
-      return;
-    }
-
-    video.addEventListener(
-      "loadeddata",
-      resolve,
-      { once: true }
-    );
+    if (video.readyState >= 2) return resolve();
+    video.addEventListener("loadeddata", resolve, { once: true });
   });
 }
 
 function waitSeeked() {
-
   return new Promise(resolve => {
-
-    video.addEventListener(
-      "seeked",
-      resolve,
-      { once: true }
-    );
+    video.addEventListener("seeked", resolve, { once: true });
   });
 }
 
-//
 // 📤 HOST -> Firebase
-//
 async function pushState() {
-
-  if (!isHost) return;
-
-  if (!video.src) return;
+  if (!isHost || !video.src || syncing) return;
 
   await set(roomRef, {
-
     url: video.src,
-
     time: video.currentTime,
-
     paused: video.paused,
-
-    updatedAt: Date.now()
+    updatedAt: getNetworkTime() // On utilise l'heure réseau !
   });
 }
 
-//
 // ▶️ HOST START
-//
 hostBtn.onclick = async () => {
-
   const url = videoUrl.value.trim();
-
-  if (!url) return;
+  if (!url) return alert("Veuillez entrer une URL vidéo.");
 
   isHost = true;
-
-  setStatus("🎬 HOST");
-
-  syncing = true;
+  setStatus("👑 Hôte (Envoi de la synchro)");
+  syncing = true; // Empêche les boucles d'événements pendant l'init
 
   try {
-
     video.src = url;
-
     await waitVideoReady();
-
     await video.play();
-
     await pushState();
-
   } catch (e) {
-
-    console.error(e);
-
+    console.error("Erreur de lancement :", e);
+    setStatus("❌ Erreur de lecture");
   } finally {
-
     syncing = false;
   }
 };
 
-//
-// 👥 JOIN VIEWER
-//
+// 👥 JOIN
 joinBtn.onclick = async () => {
-
   isHost = false;
+  setStatus("👥 Spectateur (Synchronisé)");
 
-  setStatus("👥 VIEWER");
-
-  //
-  // IMPORTANT iPhone :
-  // débloque autoplay
-  //
+  // IMPORTANT iOS : Débloque la vidéo avec une interaction utilisateur
   try {
-
+    video.muted = true; // Mute garantit l'autorisation de lecture sur iOS
+    forceMutedForAutoplay = true;
     await video.play();
-
     video.pause();
+  } catch (e) {
+    console.warn("Autoplay initial bloqué", e);
+  }
 
-  } catch (e) {}
-
-  //
-  // sync immédiate
-  //
   await forceSync();
 };
 
-//
 // 🔄 RESYNC
-//
 syncBtn.onclick = async () => {
-
   if (isHost) {
-
     await pushState();
-
-    setStatus("🔄 Sync envoyée");
-
+    setStatus("👑 Hôte (Sync forcée envoyée)");
   } else {
-
     await forceSync();
-
-    setStatus("🔄 Resync");
+    setStatus("👥 Spectateur (Resync manuelle)");
   }
 };
 
-//
-// 🎯 APPLY SYNC
-//
-async function applySync(data, force = false) {
+// 🎯 VRAIE sync robuste
+async function applySync(data) {
+  syncing = true; // Verrouille les événements locaux
 
   try {
-
-    //
-    // 📺 Nouvelle vidéo
-    //
+    // 1. Nouvelle vidéo ?
     if (video.src !== data.url) {
-
-      syncing = true;
-
       video.src = data.url;
-
       await waitVideoReady();
-
-      syncing = false;
     }
 
-    //
-    // ⏱️ Temps cible
-    //
-    const latency =
-      (Date.now() - data.updatedAt) / 1000;
+    // 2. Calcul du temps cible
+    const latency = (getNetworkTime() - data.updatedAt) / 1000;
+    
+    // CORRECTION BUG MAJEUR : on n'ajoute la latence QUE si la vidéo est en cours de lecture
+    const target = data.paused ? data.time : data.time + latency;
 
-    const target =
-      data.time + latency;
-
-    const drift =
-      target - video.currentTime;
-
-    //
-    // ⏸️ PAUSE PRIORITAIRE
-    //
-    if (data.paused) {
-
-      if (!video.paused) {
-
-        video.pause();
-      }
-
-      //
-      // force position exacte pause
-      //
-      if (
-        Math.abs(drift) > 0.2 ||
-        force
-      ) {
-
-        video.currentTime = target;
-      }
-
-      return;
-    }
-
-    //
-    // ▶️ PLAY PRIORITAIRE
-    //
-    if (video.paused) {
-
-      try {
-
-        await video.play();
-
-      } catch (e) {
-
-        setStatus(
-          "📱 Clique sur Rejoindre"
-        );
-
-        return;
-      }
-    }
-
-    //
-    // 🔥 GROS DÉCALAGE
-    //
-    if (
-      Math.abs(drift) > 1.2 ||
-      force
-    ) {
-
-      syncing = true;
-
-      //
-      // safari iphone fix
-      //
+    // 3. Application du temps si l'écart est significatif (> 0.5s)
+    const drift = Math.abs(video.currentTime - target);
+    
+    if (drift > 0.5 || video.paused !== data.paused) {
       video.pause();
-
-      await wait(50);
-
       video.currentTime = target;
-
       await waitSeeked();
-
-      //
-      // double seek iphone
-      //
-      if (
-        Math.abs(video.currentTime - target) > 0.3
-      ) {
-
+      
+      // Double correction pour les navigateurs capricieux (Safari)
+      if (Math.abs(video.currentTime - target) > 0.3) {
         video.currentTime = target;
-
         await waitSeeked();
       }
 
-      await wait(120);
-
-      try {
-
-        await video.play();
-
-      } catch (e) {}
-
-      syncing = false;
-
-      return;
-    }
-
-    //
-    // ⚡ Petit décalage :
-    // correction douce
-    //
-    if (Math.abs(drift) > 0.35) {
-
-      //
-      // retard
-      //
-      if (drift > 0) {
-
-        video.playbackRate = 1.10;
-
+      // 4. Gestion Play/Pause
+      if (!data.paused) {
+        try {
+          await video.play();
+          if (forceMutedForAutoplay) {
+             setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
+             forceMutedForAutoplay = false; // Affiche le message une seule fois
+          }
+        } catch (e) {
+          setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
+        }
       } else {
-
-        //
-        // avance
-        //
-        video.playbackRate = 0.90;
+        video.pause();
       }
-
-    } else {
-
-      //
-      // sync parfaite
-      //
-      video.playbackRate = 1;
     }
-
   } catch (e) {
-
-    console.error(e);
+    console.error("Erreur de synchronisation:", e);
+  } finally {
+    // On libère le verrou avec un léger délai pour ignorer les événements résiduels
+    setTimeout(() => { syncing = false; }, 300);
   }
 }
 
-//
-// 👂 FIREBASE LISTENER
-//
+// 👂 Firebase listener (Spectateurs uniquement)
 onValue(roomRef, async snap => {
-
   const data = snap.val();
+  if (!data || isHost || syncing) return;
 
-  if (!data) return;
+  const latency = (getNetworkTime() - data.updatedAt) / 1000;
+  const target = data.paused ? data.time : data.time + latency;
+  const drift = Math.abs(video.currentTime - target);
 
-  //
-  // host ignore
-  //
-  if (isHost) return;
-
-  //
-  // éviter spam sync
-  //
-  if (syncing) return;
-
-  await applySync(data);
+  // Tolérance plus stricte (0.8s) pour une synchro "Pro"
+  if (video.src !== data.url || drift > 0.8 || video.paused !== data.paused) {
+    await applySync(data);
+  }
 });
 
-//
-// 🔄 FORCE RESYNC
-//
+// 🔄 Force sync
 async function forceSync() {
-
   const snap = await get(roomRef);
-
   const data = snap.val();
-
-  if (!data) return;
-
-  await applySync(data, true);
+  if (data) await applySync(data);
 }
 
-//
-// 🎮 HOST CONTROLS
-//
-video.addEventListener("play", () => {
+// 🎮 HOST controls
+video.addEventListener("play", pushState);
+video.addEventListener("pause", pushState);
+video.addEventListener("seeked", pushState);
 
-  if (!isHost) return;
-
-  if (syncing) return;
-
-  pushState();
-});
-
-video.addEventListener("pause", () => {
-
-  if (!isHost) return;
-
-  if (syncing) return;
-
-  pushState();
-});
-
-video.addEventListener("seeked", () => {
-
-  if (!isHost) return;
-
-  if (syncing) return;
-
-  pushState();
-});
-
-//
-// ⏱️ Sync permanente HOST
-//
+// ⏱️ Sync permanente HOST (Heartbeat)
 setInterval(() => {
-
-  if (!isHost) return;
-
-  if (!video.src) return;
-
-  pushState();
-
-}, 800);
+  if (isHost && !video.paused) {
+    pushState();
+  }
+}, 2000);
