@@ -3,7 +3,6 @@ import {
   getDatabase,
   ref,
   set,
-  push,
   onValue
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
@@ -20,95 +19,94 @@ import {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// 🔗 FIX : candidates devient une LISTE
-const offerRef = ref(db, "call/offer");
-const answerRef = ref(db, "call/answer");
-const candidatesRef = ref(db, "call/candidates");
+const stateRef = ref(db, "movieState");
 
-const fileInput = document.getElementById("fileInput");
-const hostBtn = document.getElementById("hostBtn");
 const video = document.getElementById("video");
+const urlInput = document.getElementById("videoUrl");
+const startBtn = document.getElementById("startBtn");
 
-let pc;
-
-const config = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-};
+let syncing = false;
 
 //
-// 🟢 HOST
+// 🟢 HOST : lance le film
 //
-hostBtn.onclick = async () => {
-  const file = fileInput.files[0];
-  if (!file) return alert("Choisis un film");
+startBtn.onclick = () => {
+  const url = urlInput.value;
+  if (!url) return;
 
-  const url = URL.createObjectURL(file);
   video.src = url;
-  await video.play();
+  video.play();
 
-  const stream = video.captureStream();
-
-  pc = new RTCPeerConnection(config);
-
-  stream.getTracks().forEach(track => {
-    pc.addTrack(track, stream);
-  });
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      push(candidatesRef, e.candidate.toJSON());
-    }
-  };
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-
-  set(offerRef, offer);
-
-  onValue(answerRef, async (snap) => {
-    const answer = snap.val();
-    if (answer && !pc.currentRemoteDescription) {
-      await pc.setRemoteDescription(answer);
-    }
+  set(stateRef, {
+    url,
+    time: 0,
+    playing: true,
+    lastUpdate: Date.now()
   });
 };
 
 //
-// 🔵 VIEWER
+// 🎥 sync local → Firebase
 //
-pc = new RTCPeerConnection(config);
+video.addEventListener("play", () => {
+  if (syncing) return;
 
-pc.ontrack = (e) => {
-  video.srcObject = e.streams[0];
-};
-
-pc.onicecandidate = (e) => {
-  if (e.candidate) {
-    push(candidatesRef, e.candidate.toJSON());
-  }
-};
-
-// 👉 recevoir offer
-onValue(offerRef, async (snap) => {
-  const offer = snap.val();
-  if (!offer) return;
-
-  await pc.setRemoteDescription(offer);
-
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-
-  set(answerRef, answer);
+  set(stateRef, {
+    url: video.src,
+    time: video.currentTime,
+    playing: true,
+    lastUpdate: Date.now()
+  });
 });
 
-// 👉 recevoir candidates (IMPORTANT FIX)
-onValue(candidatesRef, async (snap) => {
+video.addEventListener("pause", () => {
+  if (syncing) return;
+
+  set(stateRef, {
+    url: video.src,
+    time: video.currentTime,
+    playing: false,
+    lastUpdate: Date.now()
+  });
+});
+
+video.addEventListener("seeked", () => {
+  if (syncing) return;
+
+  set(stateRef, {
+    url: video.src,
+    time: video.currentTime,
+    playing: !video.paused,
+    lastUpdate: Date.now()
+  });
+});
+
+//
+// 👥 sync global (nouveaux arrivants inclus)
+//
+onValue(stateRef, (snap) => {
   const data = snap.val();
   if (!data) return;
 
-  Object.values(data).forEach(async (c) => {
-    try {
-      await pc.addIceCandidate(c);
-    } catch (e) {}
-  });
+  syncing = true;
+
+  // charger vidéo si différente
+  if (video.src !== data.url) {
+    video.src = data.url;
+  }
+
+  // correction du temps (important pour join tardif)
+  const diff = (Date.now() - data.lastUpdate) / 1000;
+
+  video.currentTime = data.time + diff;
+
+  if (data.playing) {
+    video.play();
+  } else {
+    video.pause();
+  }
+
+  setTimeout(() => {
+    syncing = false;
+  }, 200);
 });
