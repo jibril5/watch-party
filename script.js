@@ -1,4 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+
 import {
   getDatabase,
   ref,
@@ -6,10 +7,14 @@ import {
   onValue
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
+//
+// 🔥 Firebase config
+//
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
 
+  // ⚠️ REMPLACE par TON URL exacte Firebase
   databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
 
   projectId: "watch-party-d3f69",
@@ -19,61 +24,33 @@ const firebaseConfig = {
   measurementId: "G-Y99MTG84DC"
 };
 
+//
+// 🚀 Init Firebase
+//
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+//
+// 🎬 Référence DB
+//
 const stateRef = ref(db, "movieState");
 
+//
+// 🎥 Elements HTML
+//
 const video = document.getElementById("video");
 const urlInput = document.getElementById("videoUrl");
 const startBtn = document.getElementById("startBtn");
 
+//
+// 🛑 Evite boucle sync
+//
 let syncing = false;
 
 //
-// 🟢 HOST : lance le film
+// 📤 Envoie état vers Firebase
 //
-startBtn.onclick = () => {
-  const url = urlInput.value;
-  if (!url) return;
-
-  video.src = url;
-  video.play();
-
-  set(stateRef, {
-    url,
-    time: 0,
-    playing: true,
-    lastUpdate: Date.now()
-  });
-};
-
-//
-// 🎥 sync local → Firebase
-//
-video.addEventListener("play", () => {
-  if (syncing) return;
-
-  set(stateRef, {
-    url: video.src,
-    time: video.currentTime,
-    playing: true,
-    lastUpdate: Date.now()
-  });
-});
-
-video.addEventListener("pause", () => {
-  if (syncing) return;
-
-  set(stateRef, {
-    url: video.src,
-    time: video.currentTime,
-    playing: false,
-    lastUpdate: Date.now()
-  });
-});
-
-video.addEventListener("seeked", () => {
+function sendState() {
   if (syncing) return;
 
   set(stateRef, {
@@ -82,34 +59,119 @@ video.addEventListener("seeked", () => {
     playing: !video.paused,
     lastUpdate: Date.now()
   });
+}
+
+//
+// ▶️ Lancer film
+//
+startBtn.onclick = async () => {
+  const url = urlInput.value.trim();
+
+  if (!url) return;
+
+  video.src = url;
+
+  try {
+    await video.play();
+
+    set(stateRef, {
+      url,
+      time: 0,
+      playing: true,
+      lastUpdate: Date.now()
+    });
+
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+//
+// 🎮 Events vidéo
+//
+video.addEventListener("play", () => {
+  sendState();
+});
+
+video.addEventListener("pause", () => {
+  sendState();
+});
+
+video.addEventListener("seeked", () => {
+  sendState();
 });
 
 //
-// 👥 sync global (nouveaux arrivants inclus)
+// ⏱️ Sync régulière pendant lecture
 //
-onValue(stateRef, (snap) => {
+setInterval(() => {
+
+  if (video.paused) return;
+  if (syncing) return;
+
+  sendState();
+
+}, 2000);
+
+//
+// 👥 Réception sync Firebase
+//
+onValue(stateRef, async (snap) => {
+
   const data = snap.val();
+
   if (!data) return;
 
   syncing = true;
 
-  // charger vidéo si différente
+  //
+  // 🎬 Charger vidéo si différente
+  //
   if (video.src !== data.url) {
+
     video.src = data.url;
+
+    await new Promise(resolve => {
+      video.onloadedmetadata = resolve;
+    });
   }
 
-  // correction du temps (important pour join tardif)
+  //
+  // ⏱️ Calcul temps réel
+  //
   const diff = (Date.now() - data.lastUpdate) / 1000;
 
-  video.currentTime = data.time + diff;
+  const targetTime = data.time + diff;
 
-  if (data.playing) {
-    video.play();
-  } else {
-    video.pause();
+  //
+  // 🎯 Correction seulement si gros décalage
+  //
+  if (Math.abs(video.currentTime - targetTime) > 1.5) {
+    video.currentTime = targetTime;
   }
 
+  //
+  // ▶️ / ⏸️ Sync play pause
+  //
+  try {
+
+    if (data.playing && video.paused) {
+      await video.play();
+    }
+
+    if (!data.playing && !video.paused) {
+      video.pause();
+    }
+
+  } catch (e) {
+    console.error(e);
+  }
+
+  //
+  // 🔓 Fin sync
+  //
   setTimeout(() => {
     syncing = false;
-  }, 200);
+  }, 300);
+
 });
