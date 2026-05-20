@@ -283,9 +283,124 @@ button:hover::before {
   animation: fadeIn 0.8s ease;
 }
 
-video {
-  width: 100%;
-  display: block;
+/* ==============================
+   VIDEO.JS OVERRIDES
+   On réutilise les couleurs du site
+============================== */
+
+/* Conteneur principal : fond noir */
+.video-js {
+  width: 100% !important;
+  border-radius: 28px;
+  overflow: hidden;
+  font-family: "Inter", sans-serif;
+  background-color: #000;
+}
+
+/* Barre de contrôles */
+.video-js .vjs-control-bar {
+  background: linear-gradient(
+    to top,
+    rgba(5, 5, 20, 0.92),
+    transparent
+  );
+  border-radius: 0 0 28px 28px;
+  padding: 0 8px 6px;
+  height: 44px;
+  font-size: 13px;
+}
+
+/* Boutons de la barre */
+.video-js .vjs-button > .vjs-icon-placeholder::before,
+.video-js .vjs-time-control {
+  color: #e2e8f0;
+}
+
+/* Barre de progression — fond */
+.video-js .vjs-progress-holder {
+  background: rgba(255,255,255,0.15);
+  border-radius: 999px;
+}
+
+/* Barre de progression — partie jouée (couleur du site) */
+.video-js .vjs-play-progress {
+  background: linear-gradient(90deg, #ff4d6d, #8b5cf6);
+  border-radius: 999px;
+}
+
+/* Barre de progression — partie buffered */
+.video-js .vjs-load-progress {
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+}
+
+/* Curseur rond sur la barre */
+.video-js .vjs-play-progress::before {
+  color: #ff4d6d;
+  font-size: 14px;
+  top: -4px;
+}
+
+/* Barre de volume */
+.video-js .vjs-volume-level {
+  background: linear-gradient(90deg, #8b5cf6, #2563eb);
+  border-radius: 999px;
+}
+
+.video-js .vjs-volume-bar.vjs-slider-horizontal {
+  background: rgba(255,255,255,0.15);
+  border-radius: 999px;
+}
+
+/* Bouton grand play central */
+.video-js .vjs-big-play-button {
+  background: rgba(139, 92, 246, 0.55);
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  width: 72px;
+  height: 72px;
+  line-height: 72px;
+  font-size: 28px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.video-js:hover .vjs-big-play-button,
+.video-js .vjs-big-play-button:focus {
+  background: rgba(139, 92, 246, 0.8);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+/* Texte de durée / temps */
+.video-js .vjs-current-time,
+.video-js .vjs-time-divider,
+.video-js .vjs-duration {
+  display: block !important;
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+/* Plein écran + icônes */
+.video-js .vjs-fullscreen-control .vjs-icon-placeholder::before,
+.video-js .vjs-mute-control .vjs-icon-placeholder::before,
+.video-js .vjs-play-control .vjs-icon-placeholder::before {
+  color: #e2e8f0;
+}
+
+/* Hover sur les boutons */
+.video-js .vjs-control:hover .vjs-icon-placeholder::before {
+  color: #ffffff;
+  text-shadow: 0 0 8px rgba(139,92,246,0.7);
+}
+
+/* Message "pas de source" */
+.video-js .vjs-no-flex .vjs-tech {
+  border-radius: 28px;
 }
 
 /* =========================
@@ -324,6 +439,13 @@ video {
 
   .controls-card {
     padding: 18px;
+  }
+
+  .video-js .vjs-big-play-button {
+    width: 56px;
+    height: 56px;
+    line-height: 56px;
+    font-size: 22px;
   }
 }
 
