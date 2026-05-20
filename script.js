@@ -1,5 +1,4 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-
 import {
   getDatabase,
   ref,
@@ -8,9 +7,7 @@ import {
   get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-
 // 🔥 Firebase
-
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -23,16 +20,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-
 const roomRef = ref(db, "room");
 
-
-// 🕒 Synchronisation horloge réseau Firebase
-
+// 🕒 Synchronisation de l'horloge avec le serveur Firebase
 let serverTimeOffset = 0;
-
 const offsetRef = ref(db, ".info/serverTimeOffset");
-
 onValue(offsetRef, (snap) => {
   serverTimeOffset = snap.val() || 0;
 });
@@ -41,536 +33,225 @@ function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
 
-
 // 🎥 HTML
-
 const video = document.getElementById("video");
-
 const videoUrl = document.getElementById("videoUrl");
-
 const hostBtn = document.getElementById("hostBtn");
-
 const joinBtn = document.getElementById("joinBtn");
-
 const syncBtn = document.getElementById("syncBtn");
-
 const statusEl = document.getElementById("status");
 
-
 // 🎭 State
-
 let isHost = false;
-
 let syncing = false;
-
-let forceMutedForAutoplay = false;
-
-
-// 📱 Détection iOS / Safari mobile
-
-const isIOS =
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
+let forceMutedForAutoplay = false; // Nécessaire pour iOS
+let pendingData = null; // 💡 Stocke la dernière mise à jour reçue pendant qu'un chargement est en cours
 
 // 📢 Status
-
 function setStatus(text) {
   statusEl.innerText = text;
 }
 
-
-// ⏱️ Helpers
-
-const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
-function normalizeUrl(url) {
-  try {
-    return decodeURIComponent(url || "");
-  } catch {
-    return url || "";
-  }
-}
-
-
-// 🎥 Wait video ready
-
+// ⏱️ Wait helpers avec Timeouts de sécurité (Évite que Safari ne bloque indéfiniment)
 function waitVideoReady() {
-
   return new Promise(resolve => {
-
-    if (video.readyState >= 2) {
-      return resolve();
-    }
-
-    video.addEventListener("loadeddata", resolve, { once: true });
-
-  });
-
-}
-
-
-// 🔍 Seek sécurisé spécial iPhone / Safari
-
-async function safeSeek(time) {
-
-  return new Promise(async (resolve) => {
-
-    let finished = false;
-
-    const finish = async () => {
-
-      if (finished) return;
-
-      finished = true;
-
-      if (isIOS) {
-        await wait(120);
-      }
-
+    if (video.readyState >= 2) return resolve();
+    const onReady = () => { clearTimeout(timeout); resolve(); };
+    const timeout = setTimeout(() => {
+      video.removeEventListener("loadeddata", onReady);
       resolve();
-    };
-
-    const onSeeked = () => {
-      finish();
-    };
-
-    video.addEventListener("seeked", onSeeked, { once: true });
-
-    try {
-
-      if (typeof video.fastSeek === "function") {
-        video.fastSeek(time);
-      } else {
-        video.currentTime = time;
-      }
-
-    } catch {
-
-      video.currentTime = time;
-    }
-
-    // fallback sécurité Safari
-
-    setTimeout(
-      finish,
-      isIOS ? 700 : 300
-    );
-
+    }, 5000);
+    video.addEventListener("loadeddata", onReady, { once: true });
   });
-
 }
 
+function waitSeeked() {
+  return new Promise(resolve => {
+    const onSeeked = () => { clearTimeout(timeout); resolve(); };
+    const timeout = setTimeout(() => {
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    }, 3000);
+    video.addEventListener("seeked", onSeeked, { once: true });
+  });
+}
 
 // 📤 HOST -> Firebase
-
 async function pushState() {
-
   if (!isHost || !video.src || syncing) return;
 
-  try {
-
-    await set(roomRef, {
-      url: video.src,
-      time: video.currentTime,
-      paused: video.paused,
-      updatedAt: getNetworkTime()
-    });
-
-  } catch (e) {
-
-    console.error("Erreur pushState:", e);
-  }
-
+  await set(roomRef, {
+    url: video.src,
+    time: video.currentTime,
+    paused: video.paused,
+    updatedAt: getNetworkTime()
+  });
 }
 
-
 // ▶️ HOST START
-
 hostBtn.onclick = async () => {
-
   const url = videoUrl.value.trim();
-
-  if (!url) {
-    return alert("Veuillez entrer une URL vidéo.");
-  }
+  if (!url) return alert("Veuillez entrer une URL vidéo.");
 
   isHost = true;
-
+  setStatus("👑 Hôte (Envoi de la synchro)");
   syncing = true;
 
-  setStatus("👑 Hôte (Envoi de la synchro)");
-
   try {
-
     video.src = url;
-
     await waitVideoReady();
-
-    if (isIOS) {
-      await wait(250);
-    }
-
     await video.play();
-
     await pushState();
-
   } catch (e) {
-
-    console.error("Erreur lancement:", e);
-
+    console.error("Erreur de lancement :", e);
     setStatus("❌ Erreur de lecture");
-
   } finally {
-
     syncing = false;
   }
-
 };
 
-
 // 👥 JOIN
-
 joinBtn.onclick = async () => {
-
   isHost = false;
-
   setStatus("👥 Spectateur (Synchronisé)");
 
   try {
-
-    // Débloque autoplay iOS
-
     video.muted = true;
-
     forceMutedForAutoplay = true;
-
     await video.play();
-
     video.pause();
-
   } catch (e) {
-
-    console.warn("Autoplay bloqué:", e);
+    console.warn("Autoplay initial bloqué", e);
   }
 
   await forceSync();
-
 };
-
 
 // 🔄 RESYNC
-
 syncBtn.onclick = async () => {
-
   if (isHost) {
-
     await pushState();
-
-    setStatus("👑 Hôte (Sync envoyée)");
-
+    setStatus("👑 Hôte (Sync forcée envoyée)");
   } else {
-
     await forceSync();
-
-    setStatus("👥 Spectateur (Resynchronisé)");
+    setStatus("👥 Spectateur (Resync manuelle)");
   }
-
 };
 
-
-// 🎯 Synchronisation robuste
-
+// 🎯 Application de la synchronisation (Optimisée iOS)
 async function applySync(data) {
-
   syncing = true;
+  pendingData = null; // On nettoie la mémoire tampon au début du traitement
 
   try {
-
-    // Nouvelle vidéo ?
-
-    if (
-      normalizeUrl(video.src) !== normalizeUrl(data.url)
-    ) {
-
+    // 1. Changement de vidéo
+    if (video.src !== data.url) {
       video.src = data.url;
-
       await waitVideoReady();
-
-      if (isIOS) {
-        await wait(250);
-      }
     }
 
-    // Calcul temps cible
+    // 2. Calcul du temps cible initial
+    let latency = (getNetworkTime() - data.updatedAt) / 1000;
+    let target = data.paused ? data.time : data.time + latency;
+    let drift = Math.abs(video.currentTime - target);
 
-    const latency =
-      (getNetworkTime() - data.updatedAt) / 1000;
+    // 3. Si l'écart est notable (> 1 seconde) ou changement d'état (Play/Pause)
+    if (drift > 1.0 || video.paused !== data.paused) {
+      
+      // Si c'est un grand saut (ex: 10 min), on force la pause le temps du saut pour aider iOS
+      if (drift > 5) video.pause();
 
-    const target =
-      data.paused
-        ? data.time
-        : data.time + latency;
+      const seekStart = getNetworkTime();
+      video.currentTime = target;
+      await waitSeeked();
 
-    let drift =
-      Math.abs(video.currentTime - target);
-
-    // Tolérance plus stricte iPhone
-
-    const syncThreshold =
-      isIOS ? 0.25 : 0.5;
-
-    // Correction position
-
-    if (drift > syncThreshold) {
-
-      // IMPORTANT Safari :
-      // pause avant seek
-
-      video.pause();
-
-      await safeSeek(target);
-
-      // Double correction
-
-      drift =
-        Math.abs(video.currentTime - target);
-
-      if (drift > 0.15) {
-
-        await wait(80);
-
-        await safeSeek(target);
+      // CORRECTION IPHONE : Compensation du temps passé à charger le réseau pendant le seek !
+      if (!data.paused) {
+        const timeSpentSeeking = (getNetworkTime() - seekStart) / 1000;
+        if (timeSpentSeeking > 0.3) {
+          // Micro-ajustement pour rattraper les secondes perdues pendant le chargement
+          video.currentTime = target + timeSpentSeeking;
+          await waitSeeked();
+        }
       }
 
-      // Triple correction spéciale iOS
-
-      drift =
-        Math.abs(video.currentTime - target);
-
-      if (isIOS && drift > 0.1) {
-
-        await wait(120);
-
-        video.currentTime = target;
-
-        await wait(120);
-      }
-    }
-
-    // PLAY / PAUSE
-
-    if (!data.paused) {
-
-      try {
-
-        await video.play();
-
-        // Vérification drift après play iOS
-
-        if (isIOS) {
-
-          await wait(200);
-
-          const finalDrift =
-            Math.abs(video.currentTime - target);
-
-          if (finalDrift > 0.3) {
-
-            video.currentTime = target;
+      // 4. Gestion finale de la lecture
+      if (!data.paused) {
+        try {
+          await video.play();
+          if (forceMutedForAutoplay) {
+            setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
+            forceMutedForAutoplay = false;
           }
+        } catch (e) {
+          console.warn("Autoplay bloqué au changement d'état :", e);
+          setStatus("📱 Autoplay bloqué. Touchez l'écran pour synchroniser.");
         }
-
-        if (forceMutedForAutoplay) {
-
-          setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
-
-          forceMutedForAutoplay = false;
-        }
-
-      } catch (e) {
-
-        console.error("Erreur autoplay:", e);
-
-        setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
+      } else {
+        video.pause();
       }
-
-    } else {
-
-      video.pause();
     }
-
   } catch (e) {
-
-    console.error("Erreur sync:", e);
-
-  } finally {
-
-    setTimeout(() => {
-
+    console.error("Erreur de synchronisation:", e);
+  } {
+    // Débloque le verrou après un mini délai de stabilisation
+    setTimeout(async () => {
       syncing = false;
-
-    }, isIOS ? 500 : 250);
+      
+      // Si l'hôte a rechangé d'état (ex: a fait Play) pendant que l'iPhone chargeait le Seek,
+      // on traite immédiatement la dernière action en attente !
+      if (pendingData) {
+        const nextData = pendingData;
+        pendingData = null;
+        await checkAndApplySync(nextData);
+      }
+    }, 300);
   }
-
 }
 
+// Vérification de la dérive (Drift)
+async function checkAndApplySync(data) {
+  if (isHost) return;
 
-// 👂 Firebase listener
+  const latency = (getNetworkTime() - data.updatedAt) / 1000;
+  const target = data.paused ? data.time : data.time + latency;
+  const drift = Math.abs(video.currentTime - target);
 
-onValue(roomRef, async (snap) => {
-
-  const data = snap.val();
-
-  if (!data || isHost || syncing) return;
-
-  const latency =
-    (getNetworkTime() - data.updatedAt) / 1000;
-
-  const target =
-    data.paused
-      ? data.time
-      : data.time + latency;
-
-  const drift =
-    Math.abs(video.currentTime - target);
-
-  const needSync =
-    normalizeUrl(video.src) !== normalizeUrl(data.url) ||
-    drift > 0.8 ||
-    video.paused !== data.paused;
-
-  if (needSync) {
-
+  // Seuil de tolérance fixé à 1.0s pour s'adapter proprement au réseau mobile de l'iPhone
+  if (video.src !== data.url || drift > 1.0 || video.paused !== data.paused) {
     await applySync(data);
   }
-
-});
-
-
-// 🔄 Force sync
-
-async function forceSync() {
-
-  try {
-
-    const snap = await get(roomRef);
-
-    const data = snap.val();
-
-    if (data) {
-
-      await applySync(data);
-    }
-
-  } catch (e) {
-
-    console.error("Erreur forceSync:", e);
-  }
-
 }
 
+// 👂 Firebase listener (Spectateurs uniquement)
+onValue(roomRef, async snap => {
+  const data = snap.val();
+  if (!data || isHost) return;
+
+  // Si l'iPhone est déjà en cours de seek/calcul, on met la mise à jour en attente
+  if (syncing) {
+    pendingData = data;
+    return;
+  }
+
+  await checkAndApplySync(data);
+});
+
+// 🔄 Force sync
+async function forceSync() {
+  const snap = await get(roomRef);
+  const data = snap.val();
+  if (data) await checkAndApplySync(data);
+}
 
 // 🎮 HOST controls
+video.addEventListener("play", pushState);
+video.addEventListener("pause", pushState);
+video.addEventListener("seeked", pushState);
 
-video.addEventListener("play", () => {
-
-  if (!syncing) {
-    pushState();
-  }
-
-});
-
-video.addEventListener("pause", () => {
-
-  if (!syncing) {
-    pushState();
-  }
-
-});
-
-
-// 🎯 Seek robuste
-
-video.addEventListener("seeked", async () => {
-
-  if (syncing) return;
-
-  // Safari spam seeked
-
-  if (isIOS) {
-    await wait(150);
-  }
-
-  pushState();
-
-});
-
-
-// ⏱️ Heartbeat host
-
+// ⏱️ Sync permanente HOST (Heartbeat toutes les 3s pour ne pas surcharger les mobiles)
 setInterval(() => {
-
-  if (isHost && !video.paused && !syncing) {
-
+  if (isHost && !video.paused) {
     pushState();
   }
-
-}, 2000);
-
-
-// 🔧 Micro correction continue spectateur
-
-setInterval(async () => {
-
-  if (isHost || syncing) return;
-
-  try {
-
-    const snap = await get(roomRef);
-
-    const data = snap.val();
-
-    if (!data || data.paused) return;
-
-    const latency =
-      (getNetworkTime() - data.updatedAt) / 1000;
-
-    const target =
-      data.time + latency;
-
-    const drift =
-      video.currentTime - target;
-
-    // Petite correction fluide
-
-    if (
-      Math.abs(drift) > 0.4 &&
-      Math.abs(drift) < 3
-    ) {
-
-      video.playbackRate =
-        drift > 0
-          ? 0.96
-          : 1.04;
-
-      setTimeout(() => {
-
-        video.playbackRate = 1;
-
-      }, 1500);
-    }
-
-    // Gros désync
-
-    else if (Math.abs(drift) >= 3) {
-
-      await applySync(data);
-    }
-
-  } catch (e) {
-
-    console.error("Erreur micro-sync:", e);
-  }
-
 }, 3000);
