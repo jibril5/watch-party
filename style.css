@@ -268,9 +268,10 @@ button:hover::before {
 .video-wrapper {
   position: relative;
 
-  border-radius: 28px;
+  width: 100%;
+  max-width: 100%;
 
-  overflow: hidden;
+  border-radius: 28px;
 
   background: #000;
 
@@ -281,6 +282,64 @@ button:hover::before {
     0 0 80px rgba(99,102,241,0.15);
 
   animation: fadeIn 0.8s ease;
+
+  /* IMPORTANT */
+  overflow: visible;
+}
+
+/* Video.js */
+.video-js {
+  width: 100% !important;
+  height: auto !important;
+
+  aspect-ratio: 16 / 9;
+
+  border-radius: 28px;
+
+  overflow: hidden;
+
+  background-color: #000;
+}
+
+/* Tech vidéo interne */
+.video-js video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Barre de contrôle */
+.video-js .vjs-control-bar {
+  height: 48px;
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+}
+
+/* iPhone */
+@media (max-width: 768px) {
+
+  .video-wrapper {
+    border-radius: 18px;
+  }
+
+  .video-js {
+    border-radius: 18px;
+  }
+
+  .video-js .vjs-control-bar {
+    height: 52px;
+    padding: 0 6px env(safe-area-inset-bottom);
+  }
+
+  /* évite que les boutons soient compressés */
+  .video-js .vjs-control {
+    min-width: 32px;
+  }
+
+  /* taille des icônes */
+  .video-js .vjs-button > .vjs-icon-placeholder::before {
+    font-size: 1.4em;
+  }
 }
 
 /* ==============================
