@@ -1,5 +1,4 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-
 import {
   getDatabase,
   ref,
@@ -8,9 +7,7 @@ import {
   get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-
 // 🔥 Firebase
-
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -22,647 +19,202 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
 const db = getDatabase(app);
-
 const roomRef = ref(db, "room");
 
-
-// 🕒 Horloge réseau Firebase
-
+// 🕒 Synchronisation de l'horloge avec le serveur Firebase (CRUCIAL)
 let serverTimeOffset = 0;
-
 const offsetRef = ref(db, ".info/serverTimeOffset");
-
 onValue(offsetRef, (snap) => {
   serverTimeOffset = snap.val() || 0;
 });
 
+// Retourne l'heure exacte et synchronisée pour tous les utilisateurs
 function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
 
-
 // 🎥 HTML
-
 const video = document.getElementById("video");
-
 const videoUrl = document.getElementById("videoUrl");
-
 const hostBtn = document.getElementById("hostBtn");
-
 const joinBtn = document.getElementById("joinBtn");
-
 const syncBtn = document.getElementById("syncBtn");
-
 const statusEl = document.getElementById("status");
 
-
-// 📱 Détection iOS
-
-const isIOS =
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-
-// 🎬 Plyr
-
-const player = new Plyr(video, {
-
-  controls: [
-    'play',
-    'progress',
-    'current-time',
-    'mute',
-    'volume',
-    'fullscreen'
-  ],
-
-  keyboard: {
-    focused: true,
-    global: true
-  },
-
-  clickToPlay: true,
-
-  fullscreen: {
-    enabled: true,
-    iosNative: true
-  },
-
-  resetOnEnd: false,
-
-  hideControls: false,
-
-  disableContextMenu: true,
-
-});
-
-
-// 📱 iPhone fix
-
-if (isIOS) {
-
-  player.elements.container.classList.add("ios-player");
-}
-
-
 // 🎭 State
-
 let isHost = false;
-
 let syncing = false;
-
-let forceMutedForAutoplay = false;
-
+let forceMutedForAutoplay = false; // Nécessaire pour iOS
 
 // 📢 Status
-
 function setStatus(text) {
   statusEl.innerText = text;
 }
 
-
-// ⏱️ Helpers
-
+// ⏱️ Wait helpers
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-function normalizeUrl(url) {
-
-  try {
-    return decodeURIComponent(url || "");
-  } catch {
-    return url || "";
-  }
-
-}
-
-
-// 🎞️ Type vidéo
-
-function getVideoType(url) {
-
-  const cleanUrl = url.split("?")[0].toLowerCase();
-
-  if (cleanUrl.endsWith(".m3u8")) {
-    return "application/x-mpegURL";
-  }
-
-  if (cleanUrl.endsWith(".webm")) {
-    return "video/webm";
-  }
-
-  return "video/mp4";
-}
-
-
-// 🎥 Set source vidéo
-
-function setVideoSource(url) {
-
-  const type = getVideoType(url);
-
-  player.source = {
-    type: "video",
-    sources: [
-      {
-        src: url,
-        type
-      }
-    ]
-  };
-
-}
-
-
-// 🎥 Wait vidéo ready
-
 function waitVideoReady() {
-
   return new Promise(resolve => {
-
-    if (video.readyState >= 2) {
-      return resolve();
-    }
-
-    video.addEventListener(
-      "loadeddata",
-      resolve,
-      { once: true }
-    );
-
+    if (video.readyState >= 2) return resolve();
+    video.addEventListener("loadeddata", resolve, { once: true });
   });
-
 }
 
-
-// 🔍 Seek sécurisé
-
-async function safeSeek(time) {
-
-  return new Promise(async (resolve) => {
-
-    let finished = false;
-
-    const finish = async () => {
-
-      if (finished) return;
-
-      finished = true;
-
-      if (isIOS) {
-        await wait(120);
-      }
-
-      resolve();
-    };
-
-    const onSeeked = () => {
-      finish();
-    };
-
-    video.addEventListener(
-      "seeked",
-      onSeeked,
-      { once: true }
-    );
-
-    try {
-
-      if (typeof video.fastSeek === "function") {
-
-        video.fastSeek(time);
-
-      } else {
-
-        video.currentTime = time;
-      }
-
-    } catch {
-
-      video.currentTime = time;
-    }
-
-    setTimeout(
-      finish,
-      isIOS ? 700 : 300
-    );
-
+function waitSeeked() {
+  return new Promise(resolve => {
+    video.addEventListener("seeked", resolve, { once: true });
   });
-
 }
-
 
 // 📤 HOST -> Firebase
-
 async function pushState() {
-
   if (!isHost || !video.src || syncing) return;
 
-  try {
-
-    await set(roomRef, {
-      url: video.currentSrc || video.src,
-      time: video.currentTime,
-      paused: video.paused,
-      updatedAt: getNetworkTime()
-    });
-
-  } catch (e) {
-
-    console.error("Erreur pushState:", e);
-  }
-
+  await set(roomRef, {
+    url: video.src,
+    time: video.currentTime,
+    paused: video.paused,
+    updatedAt: getNetworkTime() // On utilise l'heure réseau !
+  });
 }
 
-
 // ▶️ HOST START
-
 hostBtn.onclick = async () => {
-
   const url = videoUrl.value.trim();
-
-  if (!url) {
-
-    return alert("Veuillez entrer une URL vidéo.");
-  }
+  if (!url) return alert("Veuillez entrer une URL vidéo.");
 
   isHost = true;
-
-  syncing = true;
-
   setStatus("👑 Hôte (Envoi de la synchro)");
+  syncing = true; // Empêche les boucles d'événements pendant l'init
 
   try {
-
-    setVideoSource(url);
-
+    video.src = url;
     await waitVideoReady();
-
-    video.load();
-
-    if (isIOS) {
-      await wait(300);
-    }
-
     await video.play();
-
     await pushState();
-
   } catch (e) {
-
-    console.error("Erreur lancement:", e);
-
+    console.error("Erreur de lancement :", e);
     setStatus("❌ Erreur de lecture");
-
   } finally {
-
     syncing = false;
   }
-
 };
 
-
 // 👥 JOIN
-
 joinBtn.onclick = async () => {
-
   isHost = false;
-
   setStatus("👥 Spectateur (Synchronisé)");
 
+  // IMPORTANT iOS : Débloque la vidéo avec une interaction utilisateur
   try {
-
-    // Débloque autoplay iOS
-
-    video.muted = true;
-
+    video.muted = true; // Mute garantit l'autorisation de lecture sur iOS
     forceMutedForAutoplay = true;
-
     await video.play();
-
     video.pause();
-
   } catch (e) {
-
-    console.warn("Autoplay bloqué:", e);
+    console.warn("Autoplay initial bloqué", e);
   }
 
   await forceSync();
-
 };
-
 
 // 🔄 RESYNC
-
 syncBtn.onclick = async () => {
-
   if (isHost) {
-
     await pushState();
-
-    setStatus("👑 Hôte (Sync envoyée)");
-
+    setStatus("👑 Hôte (Sync forcée envoyée)");
   } else {
-
     await forceSync();
-
-    setStatus("👥 Spectateur (Resynchronisé)");
+    setStatus("👥 Spectateur (Resync manuelle)");
   }
-
 };
 
-
-// 🎯 Synchronisation
-
+// 🎯 VRAIE sync robuste
 async function applySync(data) {
-
-  syncing = true;
+  syncing = true; // Verrouille les événements locaux
 
   try {
-
-    // Nouvelle vidéo
-
-    if (
-      normalizeUrl(video.currentSrc || video.src)
-      !== normalizeUrl(data.url)
-    ) {
-
-      setVideoSource(data.url);
-
+    // 1. Nouvelle vidéo ?
+    if (video.src !== data.url) {
+      video.src = data.url;
       await waitVideoReady();
-
-      video.load();
-
-      if (isIOS) {
-        await wait(250);
-      }
     }
 
-    // Calcul temps cible
+    // 2. Calcul du temps cible
+    const latency = (getNetworkTime() - data.updatedAt) / 1000;
+    
+    // CORRECTION BUG MAJEUR : on n'ajoute la latence QUE si la vidéo est en cours de lecture
+    const target = data.paused ? data.time : data.time + latency;
 
-    const latency =
-      (getNetworkTime() - data.updatedAt) / 1000;
-
-    const target =
-      data.paused
-        ? data.time
-        : data.time + latency;
-
-    let drift =
-      Math.abs(video.currentTime - target);
-
-    const syncThreshold =
-      isIOS ? 0.25 : 0.5;
-
-    // Correction drift
-
-    if (drift > syncThreshold) {
-
+    // 3. Application du temps si l'écart est significatif (> 0.5s)
+    const drift = Math.abs(video.currentTime - target);
+    
+    if (drift > 0.5 || video.paused !== data.paused) {
       video.pause();
-
-      await safeSeek(target);
-
-      drift =
-        Math.abs(video.currentTime - target);
-
-      if (drift > 0.15) {
-
-        await wait(80);
-
-        await safeSeek(target);
-      }
-
-      drift =
-        Math.abs(video.currentTime - target);
-
-      if (isIOS && drift > 0.1) {
-
-        await wait(120);
-
+      video.currentTime = target;
+      await waitSeeked();
+      
+      // Double correction pour les navigateurs capricieux (Safari)
+      if (Math.abs(video.currentTime - target) > 0.3) {
         video.currentTime = target;
-
-        await wait(120);
+        await waitSeeked();
       }
-    }
 
-    // Play / Pause
-
-    if (!data.paused) {
-
-      try {
-
-        await video.play();
-
-        if (isIOS) {
-
-          await wait(200);
-
-          const finalDrift =
-            Math.abs(video.currentTime - target);
-
-          if (finalDrift > 0.3) {
-
-            video.currentTime = target;
+      // 4. Gestion Play/Pause
+      if (!data.paused) {
+        try {
+          await video.play();
+          if (forceMutedForAutoplay) {
+             setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
+             forceMutedForAutoplay = false; // Affiche le message une seule fois
           }
+        } catch (e) {
+          setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
         }
-
-        if (forceMutedForAutoplay) {
-
-          setStatus(
-            "🔇 Vidéo lancée en sourdine (Cliquez sur le volume)"
-          );
-
-          forceMutedForAutoplay = false;
-        }
-
-      } catch (e) {
-
-        console.error("Erreur autoplay:", e);
-
-        setStatus(
-          "📱 Autoplay bloqué. Cliquez sur Play."
-        );
+      } else {
+        video.pause();
       }
-
-    } else {
-
-      video.pause();
     }
-
   } catch (e) {
-
-    console.error("Erreur sync:", e);
-
+    console.error("Erreur de synchronisation:", e);
   } finally {
-
-    setTimeout(() => {
-
-      syncing = false;
-
-    }, isIOS ? 500 : 250);
+    // On libère le verrou avec un léger délai pour ignorer les événements résiduels
+    setTimeout(() => { syncing = false; }, 300);
   }
-
 }
 
-
-// 👂 Firebase listener
-
-onValue(roomRef, async (snap) => {
-
+// 👂 Firebase listener (Spectateurs uniquement)
+onValue(roomRef, async snap => {
   const data = snap.val();
-
   if (!data || isHost || syncing) return;
 
-  const latency =
-    (getNetworkTime() - data.updatedAt) / 1000;
+  const latency = (getNetworkTime() - data.updatedAt) / 1000;
+  const target = data.paused ? data.time : data.time + latency;
+  const drift = Math.abs(video.currentTime - target);
 
-  const target =
-    data.paused
-      ? data.time
-      : data.time + latency;
-
-  const drift =
-    Math.abs(video.currentTime - target);
-
-  const needSync =
-    normalizeUrl(video.currentSrc || video.src)
-    !== normalizeUrl(data.url)
-    ||
-    drift > 0.8
-    ||
-    video.paused !== data.paused;
-
-  if (needSync) {
-
+  // Tolérance plus stricte (0.8s) pour une synchro "Pro"
+  if (video.src !== data.url || drift > 0.8 || video.paused !== data.paused) {
     await applySync(data);
   }
-
 });
-
 
 // 🔄 Force sync
-
 async function forceSync() {
-
-  try {
-
-    const snap = await get(roomRef);
-
-    const data = snap.val();
-
-    if (data) {
-
-      await applySync(data);
-    }
-
-  } catch (e) {
-
-    console.error("Erreur forceSync:", e);
-  }
-
+  const snap = await get(roomRef);
+  const data = snap.val();
+  if (data) await applySync(data);
 }
 
+// 🎮 HOST controls
+video.addEventListener("play", pushState);
+video.addEventListener("pause", pushState);
+video.addEventListener("seeked", pushState);
 
-// 🎮 Events
-
-video.addEventListener("play", () => {
-
-  if (!syncing) {
-    pushState();
-  }
-
-});
-
-video.addEventListener("pause", () => {
-
-  if (!syncing) {
-    pushState();
-  }
-
-});
-
-video.addEventListener("seeked", async () => {
-
-  if (syncing) return;
-
-  if (isIOS) {
-    await wait(150);
-  }
-
-  pushState();
-
-});
-
-
-// ⏱️ Heartbeat host
-
+// ⏱️ Sync permanente HOST (Heartbeat)
 setInterval(() => {
-
-  if (
-    isHost &&
-    !video.paused &&
-    !syncing
-  ) {
-
+  if (isHost && !video.paused) {
     pushState();
   }
-
 }, 2000);
-
-
-// 🔧 Micro correction continue
-
-setInterval(async () => {
-
-  if (isHost || syncing) return;
-
-  try {
-
-    const snap = await get(roomRef);
-
-    const data = snap.val();
-
-    if (!data || data.paused) return;
-
-    const latency =
-      (getNetworkTime() - data.updatedAt) / 1000;
-
-    const target =
-      data.time + latency;
-
-    const drift =
-      video.currentTime - target;
-
-    // Petite correction fluide
-
-    if (
-      Math.abs(drift) > 0.4 &&
-      Math.abs(drift) < 3
-    ) {
-
-      video.playbackRate =
-        drift > 0
-          ? 0.96
-          : 1.04;
-
-      setTimeout(() => {
-
-        video.playbackRate = 1;
-
-      }, 1500);
-    }
-
-    // Gros désync
-
-    else if (Math.abs(drift) >= 3) {
-
-      await applySync(data);
-    }
-
-  } catch (e) {
-
-    console.error("Erreur micro-sync:", e);
-  }
-
-}, 3000);
