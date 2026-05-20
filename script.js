@@ -28,7 +28,7 @@ const db = getDatabase(app);
 const roomRef = ref(db, "room");
 
 
-// 🕒 Synchronisation temps Firebase
+// 🕒 Horloge réseau Firebase
 
 let serverTimeOffset = 0;
 
@@ -47,49 +47,6 @@ function getNetworkTime() {
 
 const video = document.getElementById("video");
 
-
-// 🎬 Plyr
-
-const player = new Plyr(video, {
-
-  controls: [
-    'play-large',
-    'play',
-    'progress',
-    'current-time',
-    'mute',
-    'volume',
-    'settings',
-    'pip',
-    'airplay',
-    'fullscreen'
-  ],
-
-  settings: [
-    'speed'
-  ],
-
-  speed: {
-    selected: 1,
-    options: [0.5, 0.75, 1, 1.25, 1.5, 2]
-  },
-
-  keyboard: {
-    focused: true,
-    global: true
-  },
-
-  fullscreen: {
-    enabled: true,
-    iosNative: true
-  },
-
-  clickToPlay: true,
-
-  hideControls: false
-
-});
-
 const videoUrl = document.getElementById("videoUrl");
 
 const hostBtn = document.getElementById("hostBtn");
@@ -101,6 +58,55 @@ const syncBtn = document.getElementById("syncBtn");
 const statusEl = document.getElementById("status");
 
 
+// 📱 Détection iOS
+
+const isIOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+
+// 🎬 Plyr
+
+const player = new Plyr(video, {
+
+  controls: [
+    'play',
+    'progress',
+    'current-time',
+    'mute',
+    'volume',
+    'fullscreen'
+  ],
+
+  keyboard: {
+    focused: true,
+    global: true
+  },
+
+  clickToPlay: true,
+
+  fullscreen: {
+    enabled: true,
+    iosNative: true
+  },
+
+  resetOnEnd: false,
+
+  hideControls: false,
+
+  disableContextMenu: true,
+
+});
+
+
+// 📱 iPhone fix
+
+if (isIOS) {
+
+  player.elements.container.classList.add("ios-player");
+}
+
+
 // 🎭 State
 
 let isHost = false;
@@ -108,13 +114,6 @@ let isHost = false;
 let syncing = false;
 
 let forceMutedForAutoplay = false;
-
-
-// 📱 iOS detection
-
-const isIOS =
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 
 // 📢 Status
@@ -139,7 +138,44 @@ function normalizeUrl(url) {
 }
 
 
-// 🎥 Wait video ready
+// 🎞️ Type vidéo
+
+function getVideoType(url) {
+
+  const cleanUrl = url.split("?")[0].toLowerCase();
+
+  if (cleanUrl.endsWith(".m3u8")) {
+    return "application/x-mpegURL";
+  }
+
+  if (cleanUrl.endsWith(".webm")) {
+    return "video/webm";
+  }
+
+  return "video/mp4";
+}
+
+
+// 🎥 Set source vidéo
+
+function setVideoSource(url) {
+
+  const type = getVideoType(url);
+
+  player.source = {
+    type: "video",
+    sources: [
+      {
+        src: url,
+        type
+      }
+    ]
+  };
+
+}
+
+
+// 🎥 Wait vidéo ready
 
 function waitVideoReady() {
 
@@ -149,14 +185,18 @@ function waitVideoReady() {
       return resolve();
     }
 
-    video.addEventListener("loadeddata", resolve, { once: true });
+    video.addEventListener(
+      "loadeddata",
+      resolve,
+      { once: true }
+    );
 
   });
 
 }
 
 
-// 🔍 Safe seek
+// 🔍 Seek sécurisé
 
 async function safeSeek(time) {
 
@@ -181,13 +221,20 @@ async function safeSeek(time) {
       finish();
     };
 
-    video.addEventListener("seeked", onSeeked, { once: true });
+    video.addEventListener(
+      "seeked",
+      onSeeked,
+      { once: true }
+    );
 
     try {
 
       if (typeof video.fastSeek === "function") {
+
         video.fastSeek(time);
+
       } else {
+
         video.currentTime = time;
       }
 
@@ -215,7 +262,7 @@ async function pushState() {
   try {
 
     await set(roomRef, {
-      url: video.src,
+      url: video.currentSrc || video.src,
       time: video.currentTime,
       paused: video.paused,
       updatedAt: getNetworkTime()
@@ -236,6 +283,7 @@ hostBtn.onclick = async () => {
   const url = videoUrl.value.trim();
 
   if (!url) {
+
     return alert("Veuillez entrer une URL vidéo.");
   }
 
@@ -247,12 +295,14 @@ hostBtn.onclick = async () => {
 
   try {
 
-    video.src = url;
+    setVideoSource(url);
 
     await waitVideoReady();
 
+    video.load();
+
     if (isIOS) {
-      await wait(250);
+      await wait(300);
     }
 
     await video.play();
@@ -282,6 +332,8 @@ joinBtn.onclick = async () => {
   setStatus("👥 Spectateur (Synchronisé)");
 
   try {
+
+    // Débloque autoplay iOS
 
     video.muted = true;
 
@@ -329,18 +381,25 @@ async function applySync(data) {
 
   try {
 
+    // Nouvelle vidéo
+
     if (
-      normalizeUrl(video.src) !== normalizeUrl(data.url)
+      normalizeUrl(video.currentSrc || video.src)
+      !== normalizeUrl(data.url)
     ) {
 
-      video.src = data.url;
+      setVideoSource(data.url);
 
       await waitVideoReady();
+
+      video.load();
 
       if (isIOS) {
         await wait(250);
       }
     }
+
+    // Calcul temps cible
 
     const latency =
       (getNetworkTime() - data.updatedAt) / 1000;
@@ -355,6 +414,8 @@ async function applySync(data) {
 
     const syncThreshold =
       isIOS ? 0.25 : 0.5;
+
+    // Correction drift
 
     if (drift > syncThreshold) {
 
@@ -385,6 +446,8 @@ async function applySync(data) {
       }
     }
 
+    // Play / Pause
+
     if (!data.paused) {
 
       try {
@@ -406,7 +469,9 @@ async function applySync(data) {
 
         if (forceMutedForAutoplay) {
 
-          setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
+          setStatus(
+            "🔇 Vidéo lancée en sourdine (Cliquez sur le volume)"
+          );
 
           forceMutedForAutoplay = false;
         }
@@ -415,7 +480,9 @@ async function applySync(data) {
 
         console.error("Erreur autoplay:", e);
 
-        setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
+        setStatus(
+          "📱 Autoplay bloqué. Cliquez sur Play."
+        );
       }
 
     } else {
@@ -459,8 +526,11 @@ onValue(roomRef, async (snap) => {
     Math.abs(video.currentTime - target);
 
   const needSync =
-    normalizeUrl(video.src) !== normalizeUrl(data.url) ||
-    drift > 0.8 ||
+    normalizeUrl(video.currentSrc || video.src)
+    !== normalizeUrl(data.url)
+    ||
+    drift > 0.8
+    ||
     video.paused !== data.paused;
 
   if (needSync) {
@@ -494,7 +564,7 @@ async function forceSync() {
 }
 
 
-// 🎮 Controls
+// 🎮 Events
 
 video.addEventListener("play", () => {
 
@@ -525,11 +595,15 @@ video.addEventListener("seeked", async () => {
 });
 
 
-// ⏱️ Host heartbeat
+// ⏱️ Heartbeat host
 
 setInterval(() => {
 
-  if (isHost && !video.paused && !syncing) {
+  if (
+    isHost &&
+    !video.paused &&
+    !syncing
+  ) {
 
     pushState();
   }
@@ -537,7 +611,7 @@ setInterval(() => {
 }, 2000);
 
 
-// 🔧 Micro correction
+// 🔧 Micro correction continue
 
 setInterval(async () => {
 
@@ -560,6 +634,8 @@ setInterval(async () => {
     const drift =
       video.currentTime - target;
 
+    // Petite correction fluide
+
     if (
       Math.abs(drift) > 0.4 &&
       Math.abs(drift) < 3
@@ -576,6 +652,8 @@ setInterval(async () => {
 
       }, 1500);
     }
+
+    // Gros désync
 
     else if (Math.abs(drift) >= 3) {
 
