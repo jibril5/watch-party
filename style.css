@@ -334,3 +334,59 @@ video {
   position: relative;
   top: -4px;
 }
+
+/* =========================
+   PLYR CUSTOM
+========================= */
+
+.plyr {
+
+  --plyr-color-main: #60a5fa;
+
+  border-radius: 28px;
+
+  overflow: hidden;
+
+  font-family: "Inter", sans-serif;
+}
+
+.plyr__controls {
+
+  background:
+    linear-gradient(
+      to top,
+      rgba(0,0,0,0.82),
+      rgba(0,0,0,0.15)
+    ) !important;
+
+  backdrop-filter: blur(12px);
+}
+
+.plyr--video {
+
+  background: black;
+}
+
+.plyr__control:hover {
+
+  background: rgba(96,165,250,0.2) !important;
+}
+
+.plyr__progress__buffer {
+
+  color: rgba(255,255,255,0.2) !important;
+}
+
+.plyr--full-ui input[type=range] {
+
+  color: #60a5fa;
+}
+
+.plyr__menu__container {
+
+  border-radius: 16px !important;
+
+  overflow: hidden;
+
+  backdrop-filter: blur(12px);
+}
