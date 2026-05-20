@@ -3,33 +3,104 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Watch Party Pro</title>
+
+  <title> ✿ Watch Party Jibramani ✿</title>
+
+  <!-- FONT -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- ICONS -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+  />
+
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
+  <!-- BACKGROUND BLUR CIRCLES -->
+  <div class="bg-circle bg1"></div>
+  <div class="bg-circle bg2"></div>
+
   <div class="container">
-    <h1>🎬 Watch Party</h1>
 
-    <div class="controls-card">
-      <input id="videoUrl" placeholder="Entrez l'URL de la vidéo MP4..." />
-      <div class="buttons">
-        <button id="hostBtn" class="btn-primary">▶️ Devenir Hôte</button>
-        <button id="joinBtn" class="btn-secondary">👥 Rejoindre</button>
-        <button id="syncBtn" class="btn-outline">🔄 Resync</button>
+    <!-- HEADER -->
+    <header class="hero">
+
+      <h1>
+        <span class="symbol">⊱</span>
+        Watch Party <span>Jibramani</span>
+        <span class="symbol">⊰</span>
+      </h1>
+
+    </header>
+
+    <!-- CONTROLS -->
+    <section class="controls-card">
+
+      <div class="input-wrapper">
+
+        <i class="fa-solid fa-link"></i>
+
+        <input
+          id="videoUrl"
+          type="text"
+          placeholder="Entrez l'URL de la vidéo ..."
+        />
+
       </div>
+
+      <div class="buttons">
+
+        <button id="hostBtn" class="btn-primary">
+          <i class="fa-solid fa-play"></i>
+          Devenir Hôte
+        </button>
+
+        <button id="joinBtn" class="btn-secondary">
+          <i class="fa-solid fa-users"></i>
+          Rejoindre
+        </button>
+
+        <button id="syncBtn" class="btn-outline">
+          <i class="fa-solid fa-rotate"></i>
+          Resync
+        </button>
+
+      </div>
+
+    </section>
+
+    <!-- STATUS -->
+    <div class="status-badge" id="status">
+      <span class="pulse"></span>
+      En attente d'une action...
     </div>
 
-    <div class="status-badge" id="status">En attente d'une action...</div>
+    <!-- VIDEO PLAYER -->
+    <section class="video-section">
 
-    <div class="video-wrapper">
-      <video
-        id="video"
-        controls
-        playsinline
-        webkit-playsinline
-      ></video>
-    </div>
+      <div class="video-wrapper">
+
+        <video
+          id="video"
+          controls
+          playsinline
+          webkit-playsinline
+        ></video>
+
+      </div>
+
+    </section>
+
   </div>
 
   <script type="module" src="script.js"></script>
