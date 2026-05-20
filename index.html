@@ -1,18 +1,13 @@
 <!DOCTYPE html>
-
 <html lang="fr">
-
 <head>
-
   <meta charset="UTF-8" />
-
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-  <title>✿ Watch Party Jibramani ✿</title>
+  <title> ✿ Watch Party Jibramani ✿</title>
 
   <!-- FONT -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
   <link
@@ -26,19 +21,12 @@
     href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
   />
 
-  <!-- PLYR -->
-  <link
-    rel="stylesheet"
-    href="https://cdn.plyr.io/3.7.8/plyr.css"
-  />
-
   <link rel="stylesheet" href="style.css">
-
 </head>
 
 <body>
 
-  <!-- BACKGROUND -->
+  <!-- BACKGROUND BLUR CIRCLES -->
   <div class="bg-circle bg1"></div>
   <div class="bg-circle bg2"></div>
 
@@ -73,24 +61,18 @@
       <div class="buttons">
 
         <button id="hostBtn" class="btn-primary">
-
           <i class="fa-solid fa-play"></i>
           Devenir Hôte
-
         </button>
 
         <button id="joinBtn" class="btn-secondary">
-
           <i class="fa-solid fa-users"></i>
           Rejoindre
-
         </button>
 
         <button id="syncBtn" class="btn-outline">
-
           <i class="fa-solid fa-rotate"></i>
           Resync
-
         </button>
 
       </div>
@@ -99,25 +81,21 @@
 
     <!-- STATUS -->
     <div class="status-badge" id="status">
-
       <span class="pulse"></span>
       En attente d'une action...
-
     </div>
 
-    <!-- VIDEO -->
+    <!-- VIDEO PLAYER -->
     <section class="video-section">
 
       <div class="video-wrapper">
-<video
-  id="video"
-  class="plyr-video"
-  controls
-  playsinline
-  webkit-playsinline
-  preload="auto"
-  crossorigin="anonymous"
-></video>
+
+        <video
+          id="video"
+          controls
+          playsinline
+          webkit-playsinline
+        ></video>
 
       </div>
 
@@ -125,12 +103,7 @@
 
   </div>
 
-  <!-- PLYR -->
-  <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
-
-  <!-- APP -->
   <script type="module" src="script.js"></script>
 
 </body>
-
 </html>
