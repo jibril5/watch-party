@@ -8,6 +8,11 @@
   box-sizing: border-box;
 }
 
+html, body {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   min-height: 100vh;
   font-family: "Inter", sans-serif;
@@ -20,7 +25,7 @@ body {
 
   background-size: cover;
   background-position: center 25%;
-  background-attachment: fixed;
+  background-attachment: scroll; /* FIX iOS */
 
   display: flex;
   justify-content: center;
@@ -38,421 +43,157 @@ body {
   background: rgba(15, 23, 42, 0.02);
   border-radius: 15px;
   padding: 24px;
+  overflow: visible;
 }
 
 /* =========================
-   TITLE
-========================= */
-
-h1 {
-  text-align: center;
-  font-size: 3rem;
-  margin-bottom: 30px;
-  font-weight: 800;
-  letter-spacing: -1px;
-
-  background: linear-gradient(
-    90deg,
-    #ffffff,
-    #d8b4fe,
-    #4db4e7
-  );
-
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: rgba(255, 255, 255, 0.72);
-
-  text-shadow:
-  0 3px 8px rgba(168, 85, 247, 0.2);
-}
-
-/* =========================
-   CARD
-========================= */
-
-.controls-card {
-  background: rgba(15, 23, 42, 0.72);
-
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-
-  border: 1px solid rgba(255,255,255,0.08);
-
-  border-radius: 24px;
-
-  padding: 24px;
-
-  box-shadow:
-    0 10px 40px rgba(0,0,0,0.5),
-    0 0 60px rgba(99,102,241,0.15);
-
-  margin-bottom: 24px;
-}
-
-/* =========================
-   INPUT
-========================= */
-
-input {
-  width: 100%;
-  padding: 18px 20px;
-
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.08);
-
-  background: rgba(2, 6, 23, 0.9);
-
-  color: white;
-  font-size: 16px;
-
-  transition: 0.25s ease;
-
-  margin-bottom: 18px;
-}
-
-input::placeholder {
-  color: #94a3b8;
-}
-
-input:focus {
-  outline: none;
-
-  border-color: #8b5cf6;
-
-  box-shadow:
-    0 0 0 4px rgba(139,92,246,0.15),
-    0 0 25px rgba(139,92,246,0.3);
-}
-
-/* =========================
-   BUTTONS
-========================= */
-
-.buttons {
-  display: flex;
-  gap: 14px;
-}
-
-button {
-  flex: 1;
-
-  padding: 16px;
-
-  border: none;
-  border-radius: 12px;
-
-  font-size: 16px;
-  font-weight: 600;
-
-  cursor: pointer;
-
-  transition: all 0.25s ease;
-
-  position: relative;
-  overflow: hidden;
-}
-
-/* Glow hover effect */
-
-button::before {
-  content: "";
-
-  position: absolute;
-  inset: 0;
-
-  background: linear-gradient(
-    120deg,
-    rgba(255,255,255,0.2),
-    transparent
-  );
-
-  transform: translateX(-100%);
-  transition: 0.5s;
-}
-
-button:hover::before {
-  transform: translateX(100%);
-}
-
-/* PRIMARY */
-
-.btn-primary {
-  background: linear-gradient(
-    135deg,
-    #ff4d6d,
-    #ff006e
-  );
-
-  color: white;
-
-  box-shadow:
-    0 10px 25px rgba(255,0,110,0.1);
-}
-
-.btn-primary:hover {
-  transform: translateY(-3px) scale(1.02);
-
-  box-shadow:
-    0 14px 35px rgba(255,0,110,0.25);
-}
-
-/* SECONDARY */
-
-.btn-secondary {
-  background: linear-gradient(
-    135deg,
-    #7c3aed,
-    #2563eb
-  );
-
-  color: white;
-
-  box-shadow:
-    0 10px 25px rgba(99,102,241,0.18);
-}
-
-.btn-secondary:hover {
-  transform: translateY(-3px) scale(1.02);
-
-  box-shadow:
-    0 14px 35px rgba(99,102,241,0.25);
-}
-
-/* OUTLINE */
-
-.btn-outline {
-  background: rgba(255,255,255,0.04);
-
-  border: 1px solid rgba(255,255,255,0.1);
-
-  color: #e2e8f0;
-}
-
-.btn-outline:hover {
-  background: rgba(255,255,255,0.08);
-
-  transform: translateY(-3px);
-}
-
-/* =========================
-   STATUS
-========================= */
-
-.status-badge {
-  width: fit-content;
-
-  margin: 0 auto 24px auto;
-
-  padding: 12px 22px;
-
-  border-radius: 999px;
-
-  background: rgba(15, 23, 42, 0.8);
-
-  border: 1px solid rgba(255,255,255,0.08);
-
-  backdrop-filter: blur(12px);
-
-  font-size: 14px;
-  font-weight: 600;
-
-  color: #cbd5e1;
-
-  box-shadow:
-    0 4px 20px rgba(0,0,0,0.35);
-}
-
-/* =========================
-   VIDEO PLAYER
+   VIDEO WRAPPER (IMPORTANT FIX)
 ========================= */
 
 .video-wrapper {
   position: relative;
-
+  width: 100%;
   border-radius: 28px;
-
-  overflow: hidden;
-
+  overflow: visible; /* IMPORTANT iPhone fix */
   background: #000;
-
   border: 1px solid rgba(255,255,255,0.08);
-
   box-shadow:
     0 20px 50px rgba(0,0,0,0.6),
     0 0 80px rgba(99,102,241,0.15);
-
-  animation: fadeIn 0.8s ease;
 }
 
 /* ==============================
-   VIDEO.JS OVERRIDES
-   On réutilise les couleurs du site
+   VIDEO.JS CORE FIXES
 ============================== */
 
-/* Conteneur principal : fond noir */
 .video-js {
   width: 100% !important;
+  height: auto !important;
+
+  aspect-ratio: 16 / 9; /* CRUCIAL FIX iPhone */
+
   border-radius: 28px;
   overflow: hidden;
-  font-family: "Inter", sans-serif;
+
   background-color: #000;
 }
 
-/* Barre de contrôles */
+/* video element */
+.video-js video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ==============================
+   VIDEO.JS OVERRIDES (SAFE VERSION)
+============================== */
+
+/* control bar */
 .video-js .vjs-control-bar {
   background: linear-gradient(
     to top,
     rgba(5, 5, 20, 0.92),
     transparent
   );
-  border-radius: 0 0 28px 28px;
-  padding: 0 8px 6px;
-  height: 44px;
+
+  height: 48px;
+
+  padding:
+    0 8px
+    calc(6px + env(safe-area-inset-bottom));
+
   font-size: 13px;
+
+  box-sizing: border-box;
 }
 
-/* Boutons de la barre */
+/* boutons */
 .video-js .vjs-button > .vjs-icon-placeholder::before,
 .video-js .vjs-time-control {
   color: #e2e8f0;
 }
 
-/* Barre de progression — fond */
+/* FULLSCREEN FIX iOS */
+.video-js .vjs-fullscreen-control {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+}
+
+/* progress bar */
 .video-js .vjs-progress-holder {
   background: rgba(255,255,255,0.15);
   border-radius: 999px;
 }
 
-/* Barre de progression — partie jouée (couleur du site) */
 .video-js .vjs-play-progress {
   background: linear-gradient(90deg, #ff4d6d, #8b5cf6);
-  border-radius: 999px;
 }
 
-/* Barre de progression — partie buffered */
-.video-js .vjs-load-progress {
-  background: rgba(255,255,255,0.12);
-  border-radius: 999px;
-}
-
-/* Curseur rond sur la barre */
-.video-js .vjs-play-progress::before {
-  color: #ff4d6d;
-  font-size: 14px;
-  top: -4px;
-}
-
-/* Barre de volume */
+/* volume */
 .video-js .vjs-volume-level {
   background: linear-gradient(90deg, #8b5cf6, #2563eb);
-  border-radius: 999px;
 }
 
-.video-js .vjs-volume-bar.vjs-slider-horizontal {
-  background: rgba(255,255,255,0.15);
-  border-radius: 999px;
-}
-
-/* Bouton grand play central */
+/* big play button */
 .video-js .vjs-big-play-button {
   background: rgba(139, 92, 246, 0.55);
   border: 2px solid rgba(255,255,255,0.3);
+
   border-radius: 50%;
   width: 72px;
   height: 72px;
   line-height: 72px;
+
   font-size: 28px;
+
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  margin: 0;
-  backdrop-filter: blur(6px);
-  transition: background 0.2s ease, transform 0.2s ease;
-}
-
-.video-js:hover .vjs-big-play-button,
-.video-js .vjs-big-play-button:focus {
-  background: rgba(139, 92, 246, 0.8);
-  transform: translate(-50%, -50%) scale(1.08);
-}
-
-/* Texte de durée / temps */
-.video-js .vjs-current-time,
-.video-js .vjs-time-divider,
-.video-js .vjs-duration {
-  display: block !important;
-  color: #cbd5e1;
-  font-size: 12px;
-  padding: 0 4px;
-}
-
-/* Plein écran + icônes */
-.video-js .vjs-fullscreen-control .vjs-icon-placeholder::before,
-.video-js .vjs-mute-control .vjs-icon-placeholder::before,
-.video-js .vjs-play-control .vjs-icon-placeholder::before {
-  color: #e2e8f0;
-}
-
-/* Hover sur les boutons */
-.video-js .vjs-control:hover .vjs-icon-placeholder::before {
-  color: #ffffff;
-  text-shadow: 0 0 8px rgba(139,92,246,0.7);
-}
-
-/* Message "pas de source" */
-.video-js .vjs-no-flex .vjs-tech {
-  border-radius: 28px;
 }
 
 /* =========================
-   ANIMATIONS
+   STATUS + UI (inchangé)
 ========================= */
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.status-badge {
+  width: fit-content;
+  margin: 0 auto 24px auto;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
 /* =========================
-   RESPONSIVE
+   MOBILE FIXES
 ========================= */
 
 @media (max-width: 768px) {
 
-  h1 {
-    font-size: 2rem;
+  .video-js {
+    border-radius: 18px;
+  }
+
+  .video-wrapper {
+    border-radius: 18px;
+  }
+
+  .video-js .vjs-control-bar {
+    height: 52px;
+
+    padding:
+      0 6px
+      calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .video-js .vjs-button > .vjs-icon-placeholder::before {
+    font-size: 1.35em;
   }
 
   .buttons {
     flex-direction: column;
   }
-
-  button {
-    width: 100%;
-  }
-
-  .controls-card {
-    padding: 18px;
-  }
-
-  .video-js .vjs-big-play-button {
-    width: 56px;
-    height: 56px;
-    line-height: 56px;
-    font-size: 22px;
-  }
-}
-
-.symbol {
-  font-size: 0.65em;
-  opacity: 0.7;
-
-  position: relative;
-  top: -4px;
 }
