@@ -22,14 +22,13 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const roomRef = ref(db, "room");
 
-// 🕒 Synchronisation de l'horloge avec le serveur Firebase (CRUCIAL)
+// 🕒 Synchronisation de l'horloge avec le serveur Firebase
 let serverTimeOffset = 0;
 const offsetRef = ref(db, ".info/serverTimeOffset");
 onValue(offsetRef, (snap) => {
   serverTimeOffset = snap.val() || 0;
 });
 
-// Retourne l'heure exacte et synchronisée pour tous les utilisateurs
 function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
@@ -46,25 +45,34 @@ const statusEl = document.getElementById("status");
 let isHost = false;
 let syncing = false;
 let forceMutedForAutoplay = false; // Nécessaire pour iOS
+let pendingData = null; // 💡 Stocke la dernière mise à jour reçue pendant qu'un chargement est en cours
 
 // 📢 Status
 function setStatus(text) {
   statusEl.innerText = text;
 }
 
-// ⏱️ Wait helpers
-const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
+// ⏱️ Wait helpers avec Timeouts de sécurité (Évite que Safari ne bloque indéfiniment)
 function waitVideoReady() {
   return new Promise(resolve => {
     if (video.readyState >= 2) return resolve();
-    video.addEventListener("loadeddata", resolve, { once: true });
+    const onReady = () => { clearTimeout(timeout); resolve(); };
+    const timeout = setTimeout(() => {
+      video.removeEventListener("loadeddata", onReady);
+      resolve();
+    }, 5000);
+    video.addEventListener("loadeddata", onReady, { once: true });
   });
 }
 
 function waitSeeked() {
   return new Promise(resolve => {
-    video.addEventListener("seeked", resolve, { once: true });
+    const onSeeked = () => { clearTimeout(timeout); resolve(); };
+    const timeout = setTimeout(() => {
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    }, 3000);
+    video.addEventListener("seeked", onSeeked, { once: true });
   });
 }
 
@@ -76,7 +84,7 @@ async function pushState() {
     url: video.src,
     time: video.currentTime,
     paused: video.paused,
-    updatedAt: getNetworkTime() // On utilise l'heure réseau !
+    updatedAt: getNetworkTime()
   });
 }
 
@@ -87,7 +95,7 @@ hostBtn.onclick = async () => {
 
   isHost = true;
   setStatus("👑 Hôte (Envoi de la synchro)");
-  syncing = true; // Empêche les boucles d'événements pendant l'init
+  syncing = true;
 
   try {
     video.src = url;
@@ -107,9 +115,8 @@ joinBtn.onclick = async () => {
   isHost = false;
   setStatus("👥 Spectateur (Synchronisé)");
 
-  // IMPORTANT iOS : Débloque la vidéo avec une interaction utilisateur
   try {
-    video.muted = true; // Mute garantit l'autorisation de lecture sur iOS
+    video.muted = true;
     forceMutedForAutoplay = true;
     await video.play();
     video.pause();
@@ -131,47 +138,54 @@ syncBtn.onclick = async () => {
   }
 };
 
-// 🎯 VRAIE sync robuste
+// 🎯 Application de la synchronisation (Optimisée iOS)
 async function applySync(data) {
-  syncing = true; // Verrouille les événements locaux
+  syncing = true;
+  pendingData = null; // On nettoie la mémoire tampon au début du traitement
 
   try {
-    // 1. Nouvelle vidéo ?
+    // 1. Changement de vidéo
     if (video.src !== data.url) {
       video.src = data.url;
       await waitVideoReady();
     }
 
-    // 2. Calcul du temps cible
-    const latency = (getNetworkTime() - data.updatedAt) / 1000;
-    
-    // CORRECTION BUG MAJEUR : on n'ajoute la latence QUE si la vidéo est en cours de lecture
-    const target = data.paused ? data.time : data.time + latency;
+    // 2. Calcul du temps cible initial
+    let latency = (getNetworkTime() - data.updatedAt) / 1000;
+    let target = data.paused ? data.time : data.time + latency;
+    let drift = Math.abs(video.currentTime - target);
 
-    // 3. Application du temps si l'écart est significatif (> 0.5s)
-    const drift = Math.abs(video.currentTime - target);
-    
-    if (drift > 0.5 || video.paused !== data.paused) {
-      video.pause();
+    // 3. Si l'écart est notable (> 1 seconde) ou changement d'état (Play/Pause)
+    if (drift > 1.0 || video.paused !== data.paused) {
+      
+      // Si c'est un grand saut (ex: 10 min), on force la pause le temps du saut pour aider iOS
+      if (drift > 5) video.pause();
+
+      const seekStart = getNetworkTime();
       video.currentTime = target;
       await waitSeeked();
-      
-      // Double correction pour les navigateurs capricieux (Safari)
-      if (Math.abs(video.currentTime - target) > 0.3) {
-        video.currentTime = target;
-        await waitSeeked();
+
+      // CORRECTION IPHONE : Compensation du temps passé à charger le réseau pendant le seek !
+      if (!data.paused) {
+        const timeSpentSeeking = (getNetworkTime() - seekStart) / 1000;
+        if (timeSpentSeeking > 0.3) {
+          // Micro-ajustement pour rattraper les secondes perdues pendant le chargement
+          video.currentTime = target + timeSpentSeeking;
+          await waitSeeked();
+        }
       }
 
-      // 4. Gestion Play/Pause
+      // 4. Gestion finale de la lecture
       if (!data.paused) {
         try {
           await video.play();
           if (forceMutedForAutoplay) {
-             setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
-             forceMutedForAutoplay = false; // Affiche le message une seule fois
+            setStatus("🔇 Vidéo lancée en sourdine (Cliquez sur le volume)");
+            forceMutedForAutoplay = false;
           }
         } catch (e) {
-          setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
+          console.warn("Autoplay bloqué au changement d'état :", e);
+          setStatus("📱 Autoplay bloqué. Touchez l'écran pour synchroniser.");
         }
       } else {
         video.pause();
@@ -179,32 +193,55 @@ async function applySync(data) {
     }
   } catch (e) {
     console.error("Erreur de synchronisation:", e);
-  } finally {
-    // On libère le verrou avec un léger délai pour ignorer les événements résiduels
-    setTimeout(() => { syncing = false; }, 300);
+  } {
+    // Débloque le verrou après un mini délai de stabilisation
+    setTimeout(async () => {
+      syncing = false;
+      
+      // Si l'hôte a rechangé d'état (ex: a fait Play) pendant que l'iPhone chargeait le Seek,
+      // on traite immédiatement la dernière action en attente !
+      if (pendingData) {
+        const nextData = pendingData;
+        pendingData = null;
+        await checkAndApplySync(nextData);
+      }
+    }, 300);
+  }
+}
+
+// Vérification de la dérive (Drift)
+async function checkAndApplySync(data) {
+  if (isHost) return;
+
+  const latency = (getNetworkTime() - data.updatedAt) / 1000;
+  const target = data.paused ? data.time : data.time + latency;
+  const drift = Math.abs(video.currentTime - target);
+
+  // Seuil de tolérance fixé à 1.0s pour s'adapter proprement au réseau mobile de l'iPhone
+  if (video.src !== data.url || drift > 1.0 || video.paused !== data.paused) {
+    await applySync(data);
   }
 }
 
 // 👂 Firebase listener (Spectateurs uniquement)
 onValue(roomRef, async snap => {
   const data = snap.val();
-  if (!data || isHost || syncing) return;
+  if (!data || isHost) return;
 
-  const latency = (getNetworkTime() - data.updatedAt) / 1000;
-  const target = data.paused ? data.time : data.time + latency;
-  const drift = Math.abs(video.currentTime - target);
-
-  // Tolérance plus stricte (0.8s) pour une synchro "Pro"
-  if (video.src !== data.url || drift > 0.8 || video.paused !== data.paused) {
-    await applySync(data);
+  // Si l'iPhone est déjà en cours de seek/calcul, on met la mise à jour en attente
+  if (syncing) {
+    pendingData = data;
+    return;
   }
+
+  await checkAndApplySync(data);
 });
 
 // 🔄 Force sync
 async function forceSync() {
   const snap = await get(roomRef);
   const data = snap.val();
-  if (data) await applySync(data);
+  if (data) await checkAndApplySync(data);
 }
 
 // 🎮 HOST controls
@@ -212,9 +249,9 @@ video.addEventListener("play", pushState);
 video.addEventListener("pause", pushState);
 video.addEventListener("seeked", pushState);
 
-// ⏱️ Sync permanente HOST (Heartbeat)
+// ⏱️ Sync permanente HOST (Heartbeat toutes les 3s pour ne pas surcharger les mobiles)
 setInterval(() => {
   if (isHost && !video.paused) {
     pushState();
   }
-}, 2000);
+}, 3000);
