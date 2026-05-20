@@ -20,7 +20,7 @@ body {
 
   background-size: cover;
   background-position: center 25%;
-  background-attachment: scroll;
+  background-attachment: fixed;
 
   display: flex;
   justify-content: center;
