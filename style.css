@@ -268,10 +268,9 @@ button:hover::before {
 .video-wrapper {
   position: relative;
 
-  width: 100%;
-  max-width: 100%;
-
   border-radius: 28px;
+
+  overflow: hidden;
 
   background: #000;
 
@@ -282,9 +281,6 @@ button:hover::before {
     0 0 80px rgba(99,102,241,0.15);
 
   animation: fadeIn 0.8s ease;
-
-  /* IMPORTANT */
-  overflow: visible;
 }
 
 /* ==============================
@@ -295,23 +291,23 @@ button:hover::before {
 /* Conteneur principal : fond noir */
 .video-js {
   width: 100% !important;
-  height: auto !important;
-
-  aspect-ratio: 16 / 9;
-
   border-radius: 28px;
-
   overflow: hidden;
-
+  font-family: "Inter", sans-serif;
   background-color: #000;
 }
 
-
-/* Barre de contrôle */
+/* Barre de contrôles */
 .video-js .vjs-control-bar {
-  height: 48px;
-  padding-bottom: env(safe-area-inset-bottom);
-  box-sizing: border-box;
+  background: linear-gradient(
+    to top,
+    rgba(5, 5, 20, 0.92),
+    transparent
+  );
+  border-radius: 0 0 28px 28px;
+  padding: 0 8px 6px;
+  height: 44px;
+  font-size: 13px;
 }
 
 /* Boutons de la barre */
@@ -319,32 +315,7 @@ button:hover::before {
 .video-js .vjs-time-control {
   color: #e2e8f0;
 }
-/* iPhone */
-@media (max-width: 768px) {
 
-  .video-wrapper {
-    border-radius: 18px;
-  }
-
-  .video-js {
-    border-radius: 18px;
-  }
-
-  .video-js .vjs-control-bar {
-    height: 52px;
-    padding: 0 6px env(safe-area-inset-bottom);
-  }
-
-  /* évite que les boutons soient compressés */
-  .video-js .vjs-control {
-    min-width: 32px;
-  }
-
-  /* taille des icônes */
-  .video-js .vjs-button > .vjs-icon-placeholder::before {
-    font-size: 1.4em;
-  }
-}
 /* Barre de progression — fond */
 .video-js .vjs-progress-holder {
   background: rgba(255,255,255,0.15);
