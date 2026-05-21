@@ -456,3 +456,58 @@ button:hover::before {
   position: relative;
   top: -4px;
 }
+
+/* =========================
+   VIDEO.JS MOBILE FIX
+========================= */
+
+@media (max-width: 768px) {
+
+  /* Barre plus compacte */
+  .video-js .vjs-control-bar {
+    height: 36px;
+    padding: 0 2px 2px;
+    font-size: 11px;
+  }
+
+  /* Réduit la largeur des boutons */
+  .video-js .vjs-control {
+    width: 2.8em;
+  }
+
+  /* Cache le temps restant pour gagner de la place */
+  .video-js .vjs-remaining-time {
+    display: none !important;
+  }
+
+  /* Réduit les marges des time controls */
+  .video-js .vjs-current-time,
+  .video-js .vjs-duration,
+  .video-js .vjs-time-divider {
+    padding: 0 2px;
+    font-size: 10px;
+  }
+
+  /* Barre de volume inutile sur iPhone */
+  .video-js .vjs-volume-panel {
+    display: none !important;
+  }
+
+  /* Force l'affichage du bouton fullscreen */
+  .video-js .vjs-fullscreen-control {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Empêche certains éléments de pousser le fullscreen hors écran */
+  .video-js .vjs-control-bar > * {
+    flex-shrink: 1;
+  }
+
+  /* Le progress bar prend l'espace restant */
+  .video-js .vjs-progress-control {
+    flex: 1;
+    min-width: 30px;
+  }
+}
