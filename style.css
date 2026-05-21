@@ -15,11 +15,11 @@ body {
   overflow-x: hidden;
 
   background:
-    linear-gradient(rgba(10, 10, 20, 0.52), rgba(10, 10, 20, 0.57)),
+    linear-gradient(rgba(10, 10, 20, 0.32), rgba(10, 10, 20, 0.27)),
     url("background.jpg");
 
   background-size: cover;
-  background-position: center 25%;
+  background-position: center 20%;
   background-attachment: fixed;
 
   display: flex;
