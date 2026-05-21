@@ -15,7 +15,7 @@ body {
   overflow-x: hidden;
 
   background:
-    linear-gradient(rgba(10, 10, 20, 0.32), rgba(10, 10, 20, 0.27)),
+    linear-gradient(rgba(10, 10, 20, 0.38), rgba(10, 10, 20, 0.32)),
     url("background.jpg");
 
   background-size: cover;
