@@ -38,10 +38,20 @@ const player = videojs("video", {
   controls: true,
   preload: "auto",
   playsinline: true,
-  fluid: true,                  // S'adapte au conteneur (responsive)
+  fluid: true,
+
+  responsive: true,
+  fill: true,
+
+  controlBar: {
+    volumePanel: {
+      inline: false
+    }
+  },
+
   html5: {
     vhs: {
-      overrideNative: true      // Meilleur support HLS cross-platform
+      overrideNative: true
     },
     nativeVideoTracks: false,
     nativeAudioTracks: false,
