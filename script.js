@@ -184,10 +184,12 @@ hostBtn.onclick = async () => {
     const type = await guessType(url);
 
     console.log("🎥 Type détecté :", type);
-
+    
+    const BACKEND = "https://https://watch-stream-backend-production.up.railway.app";
+    
     player.src({
-      src: url,
-      type
+      src: BACKEND + "/stream?url=" + encodeURIComponent(url),
+      type: "video/mp4"
     });
 
     await waitPlayerReady();
