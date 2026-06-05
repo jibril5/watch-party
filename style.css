@@ -505,7 +505,7 @@ button:hover::before {
     flex-shrink: 1;
   }
 
-  /* Le progress bar prend l'espace restant */
+  /* Le progress bar prend l'espace restant1 */
   .video-js .vjs-progress-control {
     flex: 1;
     min-width: 30px;
