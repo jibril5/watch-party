@@ -57,9 +57,9 @@ const player = videojs("video", {
     vhs: {
       overrideNative: !isApple
     },
-    nativeVideoTracks: isApple,
-    nativeAudioTracks: isApple,
-    nativeTextTracks: isApple
+    nativeVideoTracks: false,
+    nativeAudioTracks: false,
+    nativeTextTracks: false
   }
 });
 
