@@ -121,10 +121,32 @@ async function guessType(url) {
     return "video/ogg";
   }
 
-  // 🔍 Détection via contenu
+  // Détection via contenu
   try {
 
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      method: "GET"
+    });
+
+    const contentType = res.headers.get("content-type");
+
+    console.log("Content-Type détecté :", contentType);
+
+    if (contentType?.includes("application/vnd.apple.mpegurl")) {
+      return "application/x-mpegURL";
+    }
+
+    if (contentType?.includes("application/x-mpegURL")) {
+      return "application/x-mpegURL";
+    }
+
+    if (contentType?.includes("video/mp4")) {
+      return "video/mp4";
+    }
+
+    if (contentType?.includes("video/webm")) {
+      return "video/webm";
+    }
 
     const text = await res.text();
 
@@ -137,10 +159,11 @@ async function guessType(url) {
     }
 
   } catch (e) {
+
     console.warn("Détection MIME impossible :", e);
   }
 
-  // Fallback
+  // Fallback sécurisé
   return "video/mp4";
 }
 
