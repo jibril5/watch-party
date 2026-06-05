@@ -175,7 +175,7 @@ hostBtn.onclick = async () => {
 
   isHost = true;
 
-  setStatus("👑 Hôte1 (Envoi de la synchro)");
+  setStatus("👑 Hôte (Envoi de la synchro)");
 
   syncing = true;
 
