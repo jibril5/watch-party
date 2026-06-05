@@ -8,6 +8,7 @@ import {
   get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
+// 🔥 Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -24,6 +25,7 @@ const db = getDatabase(app);
 
 const roomRef = ref(db, "room");
 
+// 🕒 Horloge réseau Firebase
 let serverTimeOffset = 0;
 
 const offsetRef = ref(db, ".info/serverTimeOffset");
@@ -37,32 +39,35 @@ function getNetworkTime() {
 }
 
 // 🎥 Video.js
-// Détection des appareils Apple (iPhone, iPad, ou Safari sur Mac)
-const isApple = videojs.browser.IS_IOS || videojs.browser.IS_SAFARI;
-
 const player = videojs("video", {
   controls: true,
   preload: "auto",
-  playsinline: true, // Crucial pour que l'iPhone ne force pas le plein écran direct
+  playsinline: true,
   fluid: true,
   responsive: true,
   fill: true,
+  liveui: false,
+
   controlBar: {
     volumePanel: {
       inline: false
     }
   },
-  // 🛠️ FIX IPHONE / IPAD : On laisse Apple utiliser son propre lecteur natif
+
   html5: {
+
+    // ✅ Safari/iPhone/iPad utilisent le lecteur natif
     vhs: {
-      overrideNative: !isApple
+      overrideNative: !videojs.browser.IS_SAFARI
     },
-    nativeVideoTracks: false,
-    nativeAudioTracks: false,
-    nativeTextTracks: false
+
+    nativeVideoTracks: videojs.browser.IS_SAFARI,
+    nativeAudioTracks: videojs.browser.IS_SAFARI,
+    nativeTextTracks: videojs.browser.IS_SAFARI
   }
 });
 
+// 🎭 DOM
 const videoUrl = document.getElementById("videoUrl");
 
 const hostBtn = document.getElementById("hostBtn");
@@ -73,14 +78,21 @@ const syncBtn = document.getElementById("syncBtn");
 
 const statusEl = document.getElementById("status");
 
+// 🎭 State
 let isHost = false;
 
 let syncing = false;
 
+let forceMutedForAutoplay = false;
+
+let pushTimeout;
+
+// 📢 Status
 function setStatus(text) {
   statusEl.innerText = text;
 }
 
+// ⏱️ Wait player ready
 function waitPlayerReady() {
 
   return new Promise((resolve) => {
@@ -91,46 +103,113 @@ function waitPlayerReady() {
     }
 
     player.one("loadedmetadata", resolve);
+
+    // sécurité Safari
+    setTimeout(resolve, 4000);
   });
 }
 
-function guessType(url) {
+// ⏱️ Wait seek
+function waitSeeked(timeout = 2000) {
 
-  if (url.includes(".m3u8")) {
+  return new Promise((resolve) => {
+
+    let done = false;
+
+    const finish = () => {
+
+      if (done) return;
+
+      done = true;
+
+      resolve();
+    };
+
+    player.one("seeked", finish);
+
+    setTimeout(finish, timeout);
+  });
+}
+
+// 🎥 Détection type vidéo
+async function guessType(url) {
+
+  // HLS
+  if (
+    url.includes(".m3u8") ||
+    url.includes("proxy.taekong.space")
+  ) {
     return "application/x-mpegURL";
   }
 
+  // DASH
   if (url.includes(".mpd")) {
     return "application/dash+xml";
   }
 
+  // WEBM
   if (url.includes(".webm")) {
     return "video/webm";
   }
 
+  // OGG
+  if (url.includes(".ogg")) {
+    return "video/ogg";
+  }
+
+  // MP4
+  if (url.includes(".mp4")) {
+    return "video/mp4";
+  }
+
+  // fallback
   return "video/mp4";
 }
 
+// 📤 Push Firebase
 async function pushState() {
 
-  if (!isHost || syncing || !player.src()) {
+  if (
+    !isHost ||
+    syncing ||
+    !player.src()
+  ) {
     return;
   }
 
-  await set(roomRef, {
-    url: player.currentSrc(),
-    time: player.currentTime(),
-    paused: player.paused(),
-    updatedAt: getNetworkTime()
-  });
+  try {
+
+    await set(roomRef, {
+      url: player.currentSrc(),
+      type: player.currentType(),
+      time: player.currentTime(),
+      paused: player.paused(),
+      updatedAt: getNetworkTime()
+    });
+
+  } catch (e) {
+
+    console.error("Erreur Firebase :", e);
+  }
 }
 
+// 🔄 Debounce
+function debouncedPush() {
+
+  clearTimeout(pushTimeout);
+
+  pushTimeout = setTimeout(() => {
+    pushState();
+  }, 200);
+}
+
+// ▶️ HOST
 hostBtn.onclick = async () => {
 
   const url = videoUrl.value.trim();
 
   if (!url) {
-    alert("Veuillez entrer une URL.");
+    alert("Veuillez entrer une URL vidéo.");
     return;
   }
 
@@ -142,7 +221,9 @@ hostBtn.onclick = async () => {
 
   try {
 
-    const type = guessType(url);
+    const type = await guessType(url);
+
+    console.log("🎥 Type détecté :", type);
 
     player.src({
       src: url,
@@ -151,7 +232,16 @@ hostBtn.onclick = async () => {
 
     await waitPlayerReady();
 
-    await player.play();
+    try {
+
+      await player.play();
+
+    } catch (e) {
+
+      console.warn("Lecture bloquée :", e);
+
+      setStatus("📱 Cliquez sur Play");
+    }
 
     await pushState();
 
@@ -159,7 +249,7 @@ hostBtn.onclick = async () => {
 
     console.error(e);
 
-    setStatus("❌ Impossible de lire la vidéo");
+    setStatus("❌ Erreur de lecture");
 
   } finally {
 
@@ -167,6 +257,7 @@ hostBtn.onclick = async () => {
   }
 };
 
+// 👥 JOIN
 joinBtn.onclick = async () => {
 
   isHost = false;
@@ -175,17 +266,24 @@ joinBtn.onclick = async () => {
 
   try {
 
+    // 🔇 Débloque autoplay iOS
     player.muted(true);
+
+    forceMutedForAutoplay = true;
 
     await player.play();
 
     player.pause();
 
-  } catch (e) {}
+  } catch (e) {
+
+    console.warn("Autoplay init bloqué :", e);
+  }
 
   await forceSync();
 };
 
+// 🔄 RESYNC
 syncBtn.onclick = async () => {
 
   if (isHost) {
@@ -202,91 +300,190 @@ syncBtn.onclick = async () => {
   }
 };
 
-// 🎯 Application de la synchro (Spectateur)
+// 🎯 APPLY SYNC
 async function applySync(data) {
+
   syncing = true;
 
   try {
-    // 🛠️ FIX CHARGEMENT : Le spectateur utilise le data.type de l'hôte au lieu de faire un fetch
-    if (player.src() !== data.url) {
+
+    // 🎥 Nouvelle vidéo
+    if (player.currentSrc() !== data.url) {
+
       player.src({
         src: data.url,
-        type: data.type || "video/mp4" // Fallback sécurisé
+        type: data.type || "video/mp4"
       });
+
       await waitPlayerReady();
     }
 
-    const latency = (getNetworkTime() - data.updatedAt) / 1000;
-    const target = data.paused ? data.time : data.time + latency;
-    const drift = Math.abs(player.currentTime() - target);
+    // 🎯 Temps cible
+    const latency =
+      (getNetworkTime() - data.updatedAt) / 1000;
 
-    // 1. Gérer Play/Pause instantanément (Indépendant du drift)
+    const target =
+      data.paused
+        ? data.time
+        : data.time + latency;
+
+    const current = player.currentTime();
+
+    const drift = target - current;
+
+    // ▶️ PLAY / PAUSE
     if (data.paused !== player.paused()) {
+
       if (data.paused) {
+
         player.pause();
+
       } else {
+
         try {
+
           await player.play();
+
+          // 🔊 Réactive le son après autoplay iOS
           if (forceMutedForAutoplay) {
-            setStatus("🔇 Vidéo lancée en sourdine (cliquez sur le volume)");
+
+            setStatus("🔇 Cliquez sur le volume");
+
             forceMutedForAutoplay = false;
           }
+
         } catch (e) {
-          setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
+
+          console.warn("Autoplay bloqué :", e);
+
+          setStatus("📱 Cliquez sur Play");
         }
       }
     }
 
-    // 2. 🛠️ FIX SACCADES : Gérer le saut dans le temps seulement si le décalage est gros (> 2.5s)
-    if (drift > 2.5 && !data.paused) {
+    // 🧠 GROS DESYNC
+    if (Math.abs(drift) > 2.5) {
+
       player.currentTime(target);
-    } else if (drift > 0.5 && data.paused) {
-      // Si en pause, on veut être précis
-      player.currentTime(target);
+
+      await waitSeeked();
+    }
+
+    // 🧠 PETIT DESYNC
+    else if (
+      Math.abs(drift) > 0.4 &&
+      !data.paused
+    ) {
+
+      // en retard
+      if (drift > 0) {
+
+        player.playbackRate(1.03);
+
+      }
+
+      // en avance
+      else {
+
+        player.playbackRate(0.97);
+      }
+
+      // retour vitesse normale
+      setTimeout(() => {
+
+        player.playbackRate(1);
+
+      }, 1500);
     }
 
   } catch (e) {
-    console.error("Erreur de synchronisation :", e);
+
+    console.error("Erreur sync :", e);
+
   } finally {
-    setTimeout(() => { syncing = false; }, 300);
+
+    setTimeout(() => {
+
+      syncing = false;
+
+    }, 300);
   }
 }
 
+// 👂 Firebase listener
 onValue(roomRef, async (snap) => {
 
   const data = snap.val();
 
-  if (!data || isHost || syncing) {
+  if (
+    !data ||
+    isHost ||
+    syncing
+  ) {
     return;
   }
 
-  await applySync(data);
+  const latency =
+    (getNetworkTime() - data.updatedAt) / 1000;
+
+  const target =
+    data.paused
+      ? data.time
+      : data.time + latency;
+
+  const drift =
+    Math.abs(player.currentTime() - target);
+
+  // 🧠 Sync intelligente
+  if (
+
+    player.currentSrc() !== data.url ||
+
+    drift > 2.5 ||
+
+    player.paused() !== data.paused
+  ) {
+
+    await applySync(data);
+  }
 });
 
+// 🔄 Force sync
 async function forceSync() {
 
-  const snap = await get(roomRef);
+  try {
 
-  const data = snap.val();
+    const snap = await get(roomRef);
 
-  if (data) {
-    await applySync(data);
+    const data = snap.val();
+
+    if (data) {
+
+      await applySync(data);
+    }
+
+  } catch (e) {
+
+    console.error("Erreur forceSync :", e);
   }
 }
 
+// 🎮 Events host
 player.on("play", pushState);
 
 player.on("pause", pushState);
 
-player.on("seeked", pushState);
+player.on("seeking", debouncedPush);
 
-player.on("seeking", pushState);
+player.on("seeked", debouncedPush);
 
+// ⏳ Buffering
 player.on("waiting", () => {
 
   setStatus("⏳ Buffering...");
 });
 
+// ▶️ Playing
 player.on("playing", () => {
 
   setStatus(
@@ -296,11 +493,15 @@ player.on("playing", () => {
   );
 });
 
+// ❤️ Heartbeat
 setInterval(() => {
 
-  if (isHost && !player.paused()) {
+  if (
+    isHost &&
+    !player.paused()
+  ) {
 
     pushState();
   }
 
-}, 5000);
+}, 3000);
