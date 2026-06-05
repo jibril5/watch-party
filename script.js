@@ -36,8 +36,6 @@ function getNetworkTime() {
 }
 
 // 🎥 Video.js
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
 const player = videojs("video", {
   controls: true,
   preload: "auto",
@@ -53,16 +51,13 @@ const player = videojs("video", {
   },
 
   html5: {
-
-    // ✅ iPhone/iPad = lecteur natif Apple
-    // ✅ PC = VHS
     vhs: {
-      overrideNative: !isIOS
+      overrideNative: true
     },
 
-    nativeVideoTracks: isIOS,
-    nativeAudioTracks: isIOS,
-    nativeTextTracks: isIOS
+    nativeVideoTracks: false,
+    nativeAudioTracks: false,
+    nativeTextTracks: false
   }
 });
 
@@ -208,19 +203,10 @@ hostBtn.onclick = async () => {
 
     console.log("🎥 Type détecté :", type);
 
-    if (isIOS && type === "application/x-mpegURL") {
-
-      player.reset();
-    
-      player.tech_.el_.src = url;
-    
-    } else {
-    
-      player.src({
-        src: url,
-        type
-      });
-    }
+    player.src({
+      src: url,
+      type
+    });
 
     await waitPlayerReady();
 
@@ -429,4 +415,4 @@ setInterval(() => {
     pushState();
   }
 
-}, 2000);
+}, 3000);
