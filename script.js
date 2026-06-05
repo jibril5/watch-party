@@ -302,7 +302,7 @@ async function applySync(data) {
 
     // Correction si nécessaire
     if (
-      drift > 0.5 ||
+      drift > 2 ||
       player.paused() !== data.paused
     ) {
 
@@ -382,7 +382,7 @@ onValue(roomRef, async (snap) => {
 
   if (
     player.src() !== data.url ||
-    drift > 0.8 ||
+    drift > 2 ||
     player.paused() !== data.paused
   ) {
 
