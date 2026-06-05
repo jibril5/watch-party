@@ -415,4 +415,4 @@ setInterval(() => {
     pushState();
   }
 
-}, 3000);
+}, 4000);
