@@ -36,6 +36,8 @@ function getNetworkTime() {
 }
 
 // 🎥 Video.js
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
 const player = videojs("video", {
   controls: true,
   preload: "auto",
@@ -51,13 +53,16 @@ const player = videojs("video", {
   },
 
   html5: {
+
+    // ✅ iPhone/iPad = lecteur natif Apple
+    // ✅ PC = VHS
     vhs: {
-      overrideNative: true
+      overrideNative: !isIOS
     },
 
-    nativeVideoTracks: false,
-    nativeAudioTracks: false,
-    nativeTextTracks: false
+    nativeVideoTracks: isIOS,
+    nativeAudioTracks: isIOS,
+    nativeTextTracks: isIOS
   }
 });
 
