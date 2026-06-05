@@ -36,22 +36,30 @@ function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
 
+// 🎥 Video.js
+// Détection des appareils Apple (iPhone, iPad, ou Safari sur Mac)
+const isApple = videojs.browser.IS_IOS || videojs.browser.IS_SAFARI;
+
 const player = videojs("video", {
   controls: true,
   preload: "auto",
+  playsinline: true, // Crucial pour que l'iPhone ne force pas le plein écran direct
   fluid: true,
   responsive: true,
-  playsinline: true,
-  liveui: false,
-
+  fill: true,
+  controlBar: {
+    volumePanel: {
+      inline: false
+    }
+  },
+  // 🛠️ FIX IPHONE / IPAD : On laisse Apple utiliser son propre lecteur natif
   html5: {
     vhs: {
-      overrideNative: !videojs.browser.IS_SAFARI
+      overrideNative: !isApple
     },
-
-    nativeVideoTracks: videojs.browser.IS_SAFARI,
-    nativeAudioTracks: videojs.browser.IS_SAFARI,
-    nativeTextTracks: videojs.browser.IS_SAFARI
+    nativeVideoTracks: isApple,
+    nativeAudioTracks: isApple,
+    nativeTextTracks: isApple
   }
 });
 
