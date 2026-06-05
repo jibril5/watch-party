@@ -100,11 +100,6 @@ function waitSeeked() {
 // 🧠 Détection intelligente du type vidéo
 async function guessType(url) {
 
-  // 🔥 Proxy HLS connu
-  if (url.includes("proxy.taekong.space")) {
-    return "application/x-mpegURL";
-  }
-
   // Extensions classiques
   if (url.includes(".m3u8")) {
     return "application/x-mpegURL";
