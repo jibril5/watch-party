@@ -208,10 +208,19 @@ hostBtn.onclick = async () => {
 
     console.log("🎥 Type détecté :", type);
 
-    player.src({
-      src: url,
-      type
-    });
+    if (isIOS && type === "application/x-mpegURL") {
+
+      player.reset();
+    
+      player.tech_.el_.src = url;
+    
+    } else {
+    
+      player.src({
+        src: url,
+        type
+      });
+    }
 
     await waitPlayerReady();
 
