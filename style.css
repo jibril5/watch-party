@@ -472,4 +472,18 @@ button:hover::before {
     flex: 1;
     min-width: 30px;
   }
+  .video-js.vjs-fullscreen,
+  .video-js.vjs-fullscreen .vjs-tech,
+  .video-js.vjs-fullscreen video,
+  .video-js.vjs-fullscreen .vjs-control-bar {
+    border-radius: 0 !important;
+  }
+  
+  .video-js.vjs-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+  }
+  .video-wrapper:has(.video-js.vjs-fullscreen) {
+  border-radius: 0 !important;
+}
 }
