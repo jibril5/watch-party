@@ -7,6 +7,12 @@ import {
   get
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
+// =========================
+// CONFIG
+// =========================
+const API_KEY = "09c2df46123d7a1da00dbb9e60a36a31";
+const WORKER_PROXY = "https://watch-party-proxy.dahmani-jibril.workers.dev/?url=";
+
 // 🔥 Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
@@ -62,20 +68,489 @@ const player = videojs("video", {
 });
 
 // 🎭 DOM
+const searchInput = document.getElementById("searchInput");
+const resultsDiv = document.getElementById("searchResults");
+const seasonSelect = document.getElementById("seasonSelect");
+const episodeSelect = document.getElementById("episodeSelect");
+const playerSelect = document.getElementById("playerSelect");
+
 const videoUrl = document.getElementById("videoUrl");
 const hostBtn  = document.getElementById("hostBtn");
 const joinBtn  = document.getElementById("joinBtn");
 const syncBtn  = document.getElementById("syncBtn");
 const statusEl = document.getElementById("status");
 
-// 🎭 State
+// 🎭 State Firebase / Sync
 let isHost = false;
 let syncing = false;
 let forceMutedForAutoplay = false;
 
+// 🎭 State recherche
+let selectedShowId = null;
+let selectedShowName = "";
+let selectedMediaType = "tv";
+let selectedMovieData = null;
+let selectedSeasons = [];
+let searchTimeout;
+let availablePlayers = [];
+let currentVideoUrl = "";
+
 // 📢 Status
 function setStatus(text) {
   statusEl.innerText = text;
+}
+
+// =========================
+// DROPDOWN
+// =========================
+function setDropdownVisible(visible) {
+  resultsDiv.style.display = visible ? "block" : "none";
+}
+
+// =========================
+// RECHERCHE TMDB FILMS + SERIES
+// =========================
+searchInput.addEventListener("input", (e) => {
+  clearTimeout(searchTimeout);
+
+  searchTimeout = setTimeout(async () => {
+    const query = e.target.value.trim();
+
+    if (query.length < 3) {
+      resultsDiv.innerHTML = "";
+      setDropdownVisible(false);
+      return;
+    }
+
+    try {
+      const url =
+        `https://api.themoviedb.org/3/search/multi` +
+        `?api_key=${API_KEY}` +
+        `&query=${encodeURIComponent(query)}` +
+        `&language=fr-FR`;
+
+      const res = await fetch(url);
+
+      if (!res.ok) throw new Error(res.status);
+
+      const data = await res.json();
+
+      displayResults(data.results || []);
+    } catch (err) {
+      console.error("Erreur recherche TMDB :", err);
+
+      resultsDiv.innerHTML =
+        `<div class="result-item">Erreur de chargement</div>`;
+
+      setDropdownVisible(true);
+    }
+  }, 300);
+});
+
+// =========================
+// AFFICHER RESULTATS
+// =========================
+function displayResults(results) {
+  resultsDiv.innerHTML = "";
+
+  const filteredResults = results.filter(item =>
+    item.media_type === "tv" || item.media_type === "movie"
+  );
+
+  if (!filteredResults.length) {
+    resultsDiv.innerHTML =
+      `<div class="result-item">Aucun résultat trouvé</div>`;
+
+    setDropdownVisible(true);
+    return;
+  }
+
+  filteredResults.slice(0, 8).forEach(item => {
+    const div = document.createElement("div");
+    div.className = "result-item result-with-poster";
+
+    const title =
+      item.media_type === "movie"
+        ? item.title
+        : item.name;
+
+    const date =
+      item.media_type === "movie"
+        ? item.release_date
+        : item.first_air_date;
+
+    const year = date ? date.split("-")[0] : "Date inconnue";
+
+    const typeLabel =
+      item.media_type === "movie"
+        ? "Film"
+        : "Série";
+
+    const posterUrl = item.poster_path
+      ? `https://image.tmdb.org/t/p/w92${item.poster_path}`
+      : "https://via.placeholder.com/60x90?text=?";
+
+    div.innerHTML = `
+      <div>
+        <strong>${title}</strong>
+        <div style="font-size:12px;opacity:0.6">
+          ${typeLabel} • ${year}
+        </div>
+      </div>
+
+      <img class="result-poster" src="${posterUrl}" alt="${title}">
+    `;
+
+    div.addEventListener("click", () => selectMedia(item));
+
+    resultsDiv.appendChild(div);
+  });
+
+  setDropdownVisible(true);
+}
+
+// =========================
+// SELECTION FILM OU SERIE
+// =========================
+async function selectMedia(item) {
+  selectedShowId = item.id;
+  selectedMediaType = item.media_type;
+  selectedMovieData = null;
+
+  selectedShowName =
+    item.media_type === "movie"
+      ? item.title
+      : item.name;
+
+  searchInput.value = selectedShowName;
+
+  resultsDiv.innerHTML = "";
+  setDropdownVisible(false);
+
+  resetPlayers();
+
+  if (selectedMediaType === "movie") {
+    seasonSelect.style.display = "none";
+    episodeSelect.style.display = "none";
+
+    setStatus(`Chargement du film ${selectedShowName}...`);
+
+    try {
+      const url =
+        `https://api.themoviedb.org/3/movie/${item.id}` +
+        `?api_key=${API_KEY}` +
+        `&language=fr-FR`;
+
+      const res = await fetch(url);
+
+      if (!res.ok) throw new Error(res.status);
+
+      selectedMovieData = await res.json();
+
+      setStatus(`Film sélectionné : ${selectedShowName}`);
+    } catch (err) {
+      console.error("Erreur chargement film :", err);
+      setStatus("Erreur chargement film.");
+    }
+
+    return;
+  }
+
+  seasonSelect.style.display = "block";
+  episodeSelect.style.display = "block";
+
+  setStatus(`Chargement de ${selectedShowName}...`);
+
+  try {
+    const url =
+      `https://api.themoviedb.org/3/tv/${item.id}` +
+      `?api_key=${API_KEY}` +
+      `&language=fr-FR`;
+
+    const res = await fetch(url);
+
+    if (!res.ok) throw new Error(res.status);
+
+    const data = await res.json();
+
+    selectedSeasons = (data.seasons || []).filter(
+      s => s.season_number > 0
+    );
+
+    populateSeasons(selectedSeasons);
+
+    setStatus(`Série sélectionnée : ${selectedShowName}`);
+  } catch (err) {
+    console.error("Erreur chargement série :", err);
+    setStatus("Erreur chargement série.");
+  }
+}
+
+// =========================
+// SAISONS
+// =========================
+function populateSeasons(seasons) {
+  seasonSelect.innerHTML =
+    '<option value="">Choisir une saison</option>';
+
+  episodeSelect.innerHTML =
+    '<option value="">Choisir un épisode</option>';
+
+  resetPlayers();
+
+  seasons.forEach(season => {
+    const option = document.createElement("option");
+
+    option.value = season.season_number;
+    option.textContent = season.name;
+
+    seasonSelect.appendChild(option);
+  });
+
+  seasonSelect.removeEventListener("change", loadEpisodes);
+  seasonSelect.addEventListener("change", loadEpisodes);
+
+  if (seasons.length > 0) {
+    seasonSelect.value = seasons[0].season_number;
+    loadEpisodes();
+  }
+}
+
+// =========================
+// EPISODES
+// =========================
+async function loadEpisodes() {
+  if (!selectedShowId) return;
+
+  const seasonNumber = seasonSelect.value;
+
+  resetPlayers();
+
+  if (!seasonNumber) return;
+
+  try {
+    const url =
+      `https://api.themoviedb.org/3/tv/${selectedShowId}/season/${seasonNumber}` +
+      `?api_key=${API_KEY}` +
+      `&language=fr-FR`;
+
+    const res = await fetch(url);
+
+    if (!res.ok) throw new Error(res.status);
+
+    const data = await res.json();
+
+    episodeSelect.innerHTML = "";
+
+    if (!data.episodes || !data.episodes.length) {
+      episodeSelect.innerHTML =
+        `<option value="">Aucun épisode trouvé</option>`;
+      return;
+    }
+
+    data.episodes.forEach(ep => {
+      const option = document.createElement("option");
+
+      option.value = ep.episode_number;
+      option.textContent = `Épisode ${ep.episode_number} - ${ep.name}`;
+
+      episodeSelect.appendChild(option);
+    });
+  } catch (err) {
+    console.error("Erreur chargement épisodes :", err);
+
+    episodeSelect.innerHTML =
+      `<option value="">Erreur chargement</option>`;
+  }
+}
+
+// =========================
+// LECTEURS
+// =========================
+function resetPlayers() {
+  availablePlayers = [];
+  currentVideoUrl = "";
+
+  if (playerSelect) {
+    playerSelect.innerHTML =
+      `<option value="">Choisir un lecteur</option>`;
+  }
+}
+
+function extractPlayers(text) {
+  const players = [];
+
+  const blocks = text
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line.startsWith("{") && line.endsWith("}"));
+
+  for (const block of blocks) {
+    try {
+      const providerData = JSON.parse(block);
+
+      if (!Array.isArray(providerData.items)) continue;
+
+      providerData.items.forEach(item => {
+        if (!item.url) return;
+
+        players.push({
+          id: providerData.id || "",
+          provider: item.provider || providerData.id || "Inconnu",
+          service: item.service || "inconnu",
+          quality: item.quality || "unknown",
+          language: item.language || "unknown",
+          type: item.type || "unknown",
+          proxied: item.proxied === true,
+          url: item.url
+        });
+      });
+    } catch (err) {
+      console.warn("JSON ignoré :", block);
+    }
+  }
+
+  return players;
+}
+
+function populatePlayers(players) {
+  playerSelect.innerHTML =
+    `<option value="">Choisir un lecteur</option>`;
+
+  if (!players.length) {
+    playerSelect.innerHTML =
+      `<option value="">Aucun lecteur trouvé</option>`;
+    return;
+  }
+
+  players.forEach((p, index) => {
+    const option = document.createElement("option");
+
+    option.value = String(index);
+    option.textContent =
+      `${p.provider} - ${p.service} - ${p.quality} - ${p.language} - ${p.type}`;
+
+    playerSelect.appendChild(option);
+  });
+
+  const afroditiIndex = players.findIndex(p =>
+    p.provider.toLowerCase() === "afroditi" ||
+    p.id.toLowerCase() === "afroditi"
+  );
+
+  playerSelect.value = afroditiIndex >= 0 ? String(afroditiIndex) : "0";
+}
+
+async function getSelectedPlayerUrl() {
+  const index = Number(playerSelect.value);
+
+  if (Number.isNaN(index) || !availablePlayers[index]) {
+    return null;
+  }
+
+  const selectedPlayer = availablePlayers[index];
+
+  console.log("LECTEUR CHOISI :", selectedPlayer);
+  console.log("URL LECTEUR CHOISI :", selectedPlayer.url);
+
+  currentVideoUrl = selectedPlayer.url;
+  videoUrl.value = selectedPlayer.url;
+
+  return selectedPlayer.url;
+}
+
+if (playerSelect) {
+  playerSelect.addEventListener("change", async () => {
+    const url = await getSelectedPlayerUrl();
+
+    if (!url) return;
+
+    setStatus(`Lecteur sélectionné : ${availablePlayers[Number(playerSelect.value)].provider}`);
+
+    if (isHost && player.src()) {
+      await startHostPlayback(url);
+    }
+  });
+}
+
+// =========================
+// CREATION URL API SOURCE
+// =========================
+function buildSourceApiUrl() {
+  if (selectedMediaType === "movie") {
+    if (!selectedMovieData) {
+      alert("Les infos du film ne sont pas encore chargées.");
+      return null;
+    }
+
+    const releaseYear = selectedMovieData.release_date
+      ? selectedMovieData.release_date.split("-")[0]
+      : "";
+
+    return (
+      `https://3afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
+      `?tmdbId=${selectedShowId}` +
+      `&type=movie` +
+      `&imdbId=${encodeURIComponent(selectedMovieData.imdb_id || "")}` +
+      `&title=${encodeURIComponent(selectedMovieData.title || selectedShowName)}` +
+      `&releaseYear=${encodeURIComponent(releaseYear)}` +
+      `&originalTitle=${encodeURIComponent(selectedMovieData.original_title || selectedShowName)}`
+    );
+  }
+
+  const season = seasonSelect.value;
+  const episode = episodeSelect.value;
+
+  if (!season || !episode) {
+    alert("Choisis saison + épisode !");
+    return null;
+  }
+
+  return (
+    `https://3afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
+    `?tmdbId=${selectedShowId}` +
+    `&type=tv` +
+    `&title=${encodeURIComponent(selectedShowName)}` +
+    `&season=${encodeURIComponent(season)}` +
+    `&episode=${encodeURIComponent(episode)}`
+  );
+}
+
+async function fetchPlayersFromSelectedMedia() {
+  const apiUrl = buildSourceApiUrl();
+
+  if (!apiUrl) return null;
+
+  console.log("API URL:", apiUrl);
+
+  setStatus("Recherche des lecteurs...");
+
+  const proxy = WORKER_PROXY + encodeURIComponent(apiUrl);
+
+  console.log("PROXY URL:", proxy);
+
+  const res = await fetch(proxy);
+
+  if (!res.ok) {
+    throw new Error(`Erreur proxy HTTP ${res.status}`);
+  }
+
+  const text = await res.text();
+
+  console.log("RAW RESPONSE:", text);
+
+  availablePlayers = extractPlayers(text);
+
+  console.log("LECTEURS DISPONIBLES :", availablePlayers);
+
+  if (!availablePlayers.length) {
+    setStatus("Aucun lecteur trouvé.");
+    return null;
+  }
+
+  populatePlayers(availablePlayers);
+
+  return await getSelectedPlayerUrl();
 }
 
 // ⏱️ Helpers
@@ -99,8 +574,6 @@ function waitSeeked() {
 
 // 🧠 Détection intelligente du type vidéo
 async function guessType(url) {
-
-  // Extensions classiques
   if (url.includes(".m3u8")) {
     return "application/x-mpegURL";
   }
@@ -121,9 +594,7 @@ async function guessType(url) {
     return "video/ogg";
   }
 
-  // Détection via contenu
   try {
-
     const res = await fetch(url, {
       method: "GET"
     });
@@ -157,19 +628,15 @@ async function guessType(url) {
     if (text.includes("<MPD")) {
       return "application/dash+xml";
     }
-
   } catch (e) {
-
     console.warn("Détection MIME impossible :", e);
   }
 
-  // Fallback sécurisé
   return "video/mp4";
 }
 
 // 📤 HOST -> Firebase
 async function pushState() {
-
   if (!isHost || !player.src() || syncing) {
     return;
   }
@@ -182,23 +649,12 @@ async function pushState() {
   });
 }
 
-// ▶️ HOST START
-hostBtn.onclick = async () => {
-
-  const url = videoUrl.value.trim();
-
-  if (!url) {
-    return alert("Veuillez entrer une URL vidéo.");
-  }
-
+async function startHostPlayback(url) {
   isHost = true;
-
   setStatus("👑 Hôte (Envoi de la synchro)");
-
   syncing = true;
 
   try {
-
     const type = await guessType(url);
 
     console.log("🎥 Type détecté :", type);
@@ -209,43 +665,52 @@ hostBtn.onclick = async () => {
     });
 
     await waitPlayerReady();
-
     await player.play();
-
     await pushState();
-
   } catch (e) {
-
     console.error("Erreur de lecture :", e);
-
     setStatus("❌ Erreur de lecture");
-
   } finally {
-
     syncing = false;
+  }
+}
+
+// ▶️ HOST START
+hostBtn.onclick = async () => {
+  let url = null;
+
+  try {
+    if (selectedShowId) {
+      url = await fetchPlayersFromSelectedMedia();
+    }
+
+    if (!url) {
+      url = videoUrl.value.trim();
+    }
+
+    if (!url) {
+      return alert("Sélectionne une série/un film ou entre une URL vidéo.");
+    }
+
+    await startHostPlayback(url);
+  } catch (e) {
+    console.error("Erreur chargement vidéo :", e);
+    setStatus("Erreur chargement vidéo.");
   }
 };
 
 // 👥 JOIN
 joinBtn.onclick = async () => {
-
   isHost = false;
 
   setStatus("👥 Spectateur (Synchronisé)");
 
-  // Débloque autoplay iOS
   try {
-
     player.muted(true);
-
     forceMutedForAutoplay = true;
-
     await player.play();
-
     player.pause();
-
   } catch (e) {
-
     console.warn("Autoplay initial bloqué", e);
   }
 
@@ -254,31 +719,21 @@ joinBtn.onclick = async () => {
 
 // 🔄 RESYNC
 syncBtn.onclick = async () => {
-
   if (isHost) {
-
     await pushState();
-
     setStatus("👑 Hôte (Sync forcée envoyée)");
-
   } else {
-
     await forceSync();
-
     setStatus("👥 Spectateur (Resync manuelle)");
   }
 };
 
 // 🎯 Application de la synchro
 async function applySync(data) {
-
   syncing = true;
 
   try {
-
-    // Nouvelle source ?
     if (player.src() !== data.url) {
-
       const type = await guessType(data.url);
 
       console.log("🎥 Type détecté :", type);
@@ -291,7 +746,6 @@ async function applySync(data) {
       await waitPlayerReady();
     }
 
-    // Temps cible
     const latency = (getNetworkTime() - data.updatedAt) / 1000;
 
     const target = data.paused
@@ -300,70 +754,47 @@ async function applySync(data) {
 
     const drift = Math.abs(player.currentTime() - target);
 
-    // Correction si nécessaire
     if (
       drift > 2 ||
       player.paused() !== data.paused
     ) {
-
       player.pause();
-
       player.currentTime(target);
 
       await waitSeeked();
 
-      // Double correction Safari
       if (Math.abs(player.currentTime() - target) > 0.3) {
-
         player.currentTime(target);
-
         await waitSeeked();
       }
 
-      // Play / Pause
       if (!data.paused) {
-
         try {
-
           await player.play();
 
           if (forceMutedForAutoplay) {
-
             setStatus("🔇 Vidéo lancée en sourdine (cliquez sur le volume)");
-
             forceMutedForAutoplay = false;
           }
-
         } catch (e) {
-
           console.warn("Autoplay bloqué :", e);
-
           setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
         }
-
       } else {
-
         player.pause();
       }
     }
-
   } catch (e) {
-
     console.error("Erreur de synchronisation :", e);
-
   } finally {
-
     setTimeout(() => {
-
       syncing = false;
-
     }, 300);
   }
 }
 
 // 👂 Firebase listener
 onValue(roomRef, async (snap) => {
-
   const data = snap.val();
 
   if (!data || isHost || syncing) {
@@ -385,16 +816,13 @@ onValue(roomRef, async (snap) => {
     drift > 2 ||
     player.paused() !== data.paused
   ) {
-
     await applySync(data);
   }
 });
 
 // 🔄 Force sync
 async function forceSync() {
-
   const snap = await get(roomRef);
-
   const data = snap.val();
 
   if (data) {
@@ -409,10 +837,29 @@ player.on("seeked", pushState);
 
 // ⏱️ Heartbeat HOST
 setInterval(() => {
-
   if (isHost && !player.paused()) {
-
     pushState();
   }
-
 }, 4000);
+
+// =========================
+// CLOSE DROPDOWN
+// =========================
+document.addEventListener("click", (e) => {
+  const inside =
+    searchInput.contains(e.target) ||
+    resultsDiv.contains(e.target);
+
+  if (!inside) {
+    setDropdownVisible(false);
+  }
+});
+
+// =========================
+// REOPEN DROPDOWN
+// =========================
+searchInput.addEventListener("focus", () => {
+  if (resultsDiv.innerHTML.trim() !== "") {
+    setDropdownVisible(true);
+  }
+});
