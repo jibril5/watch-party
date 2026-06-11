@@ -487,3 +487,59 @@ button:hover::before {
   border-radius: 0 !important;
 }
 }
+/* =====================================
+   FULLSCREEN FIX VIDEO.JS
+===================================== */
+
+body.vjs-full-window,
+html.vjs-full-window {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #000 !important;
+}
+
+body.vjs-full-window .container,
+body.vjs-full-window .video-wrapper,
+body.vjs-full-window .video-js,
+body.vjs-full-window .vjs-tech,
+body.vjs-full-window video {
+  border-radius: 0 !important;
+}
+
+.video-js.vjs-fullscreen,
+.video-js.vjs-fullscreen .vjs-tech,
+.video-js.vjs-fullscreen video,
+.video-js.vjs-fullscreen .vjs-control-bar {
+  border-radius: 0 !important;
+}
+
+.video-wrapper:fullscreen,
+.video-wrapper:-webkit-full-screen {
+  border-radius: 0 !important;
+}
+
+.video-wrapper:fullscreen .video-js,
+.video-wrapper:fullscreen .vjs-tech,
+.video-wrapper:fullscreen video,
+.video-wrapper:-webkit-full-screen .video-js,
+.video-wrapper:-webkit-full-screen .vjs-tech,
+.video-wrapper:-webkit-full-screen video {
+  border-radius: 0 !important;
+}
+
+.video-js.vjs-fullscreen,
+body.vjs-full-window .video-js {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+.video-js.vjs-fullscreen .vjs-tech,
+body.vjs-full-window .video-js .vjs-tech {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+body.vjs-full-window .video-wrapper {
+  border: none !important;
+  box-shadow: none !important;
+}
