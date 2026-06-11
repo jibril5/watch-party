@@ -3,31 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title> ✿ Watch Party Jibramani ✿</title>
-  <!-- FONT -->
+  <title>✿ Watch Party Jibramani ✿</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
     rel="stylesheet"
   />
-  <!-- ICONS -->
+
   <link
     rel="stylesheet"
     href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
   />
-  <!-- VIDEO.JS -->
+
   <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.6.1/video-js.min.css" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.6.1/video.min.js"></script>
 
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-  <!-- BACKGROUND BLUR CIRCLES -->
   <div class="bg-circle bg1"></div>
   <div class="bg-circle bg2"></div>
+
   <div class="container">
-    <!-- HEADER -->
     <header class="hero">
       <h1>
         <span class="symbol">⊱</span>
@@ -35,37 +35,69 @@
         <span class="symbol">⊰</span>
       </h1>
     </header>
-    <!-- CONTROLS -->
+
     <section class="controls-card">
-      <div class="input-wrapper">
+
+      <div class="search-card">
+        <div class="input-wrapper">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input
+            id="searchInput"
+            type="text"
+            placeholder="Rechercher une série ou un film..."
+            autocomplete="off"
+          />
+        </div>
+
+        <div id="searchResults" class="dropdown"></div>
+      </div>
+
+      <div class="selectors">
+        <select id="seasonSelect">
+          <option value="">Choisir une saison</option>
+        </select>
+
+        <select id="episodeSelect">
+          <option value="">Choisir un épisode</option>
+        </select>
+
+        <select id="playerSelect">
+          <option value="">Choisir un lecteur</option>
+        </select>
+      </div>
+
+      <div class="input-wrapper manual-url-wrapper">
         <i class="fa-solid fa-link"></i>
         <input
           id="videoUrl"
           type="text"
-          placeholder="Entrez l'URL de la vidéo ..."
+          placeholder="URL vidéo manuelle ou lien récupéré..."
         />
       </div>
+
       <div class="buttons">
         <button id="hostBtn" class="btn-primary">
           <i class="fa-solid fa-play"></i>
           Devenir Hôte
         </button>
+
         <button id="joinBtn" class="btn-secondary">
           <i class="fa-solid fa-users"></i>
           Rejoindre
         </button>
+
         <button id="syncBtn" class="btn-outline">
           <i class="fa-solid fa-rotate"></i>
           Resync
         </button>
       </div>
     </section>
-    <!-- STATUS -->
+
     <div class="status-badge" id="status">
       <span class="pulse"></span>
       En attente d'une action...
     </div>
-    <!-- VIDEO PLAYER -->
+
     <section class="video-section">
       <div class="video-wrapper">
         <video
@@ -79,6 +111,7 @@
       </div>
     </section>
   </div>
+
   <script type="module" src="script.js"></script>
 </body>
 </html>
