@@ -13,7 +13,7 @@ import {
 const API_KEY = "09c2df46123d7a1da00dbb9e60a36a31";
 const WORKER_PROXY = "https://watch-party-proxy.dahmani-jibril.workers.dev/?url=";
 
-// Firebase
+// 🔥 Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
   authDomain: "watch-party-d3f69.firebaseapp.com",
@@ -28,40 +28,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const roomRef = ref(db, "room");
 
-// =========================
-// GOOGLE DRIVE SUPPORT
-// =========================
-function extractGoogleDriveFileId(url) {
-  const patterns = [
-    /drive\.google\.com\/file\/d\/([^/]+)/,
-    /drive\.google\.com\/open\?id=([^&]+)/,
-    /drive\.google\.com\/uc\?.*id=([^&]+)/
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match) return match[1];
-  }
-
-  return null;
-}
-
-function normalizeVideoUrl(url) {
-  if (!url) return "";
-
-  const trimmedUrl = url.trim();
-  const driveId = extractGoogleDriveFileId(trimmedUrl);
-
-  if (driveId) {
-    return `https://drive.google.com/uc?export=download&id=${driveId}`;
-  }
-
-  return trimmedUrl;
-}
-
-// =========================
-// FIREBASE TIME SYNC
-// =========================
+// 🕒 Synchronisation horloge Firebase
 let serverTimeOffset = 0;
 
 const offsetRef = ref(db, ".info/serverTimeOffset");
@@ -74,9 +41,7 @@ function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
 
-// =========================
-// VIDEO.JS
-// =========================
+// 🎥 Video.js
 const player = videojs("video", {
   controls: true,
   preload: "auto",
@@ -102,9 +67,7 @@ const player = videojs("video", {
   }
 });
 
-// =========================
-// DOM
-// =========================
+// 🎭 DOM
 const searchInput = document.getElementById("searchInput");
 const resultsDiv = document.getElementById("searchResults");
 const seasonSelect = document.getElementById("seasonSelect");
@@ -112,18 +75,17 @@ const episodeSelect = document.getElementById("episodeSelect");
 const playerSelect = document.getElementById("playerSelect");
 
 const videoUrl = document.getElementById("videoUrl");
-const hostBtn = document.getElementById("hostBtn");
-const joinBtn = document.getElementById("joinBtn");
-const syncBtn = document.getElementById("syncBtn");
+const hostBtn  = document.getElementById("hostBtn");
+const joinBtn  = document.getElementById("joinBtn");
+const syncBtn  = document.getElementById("syncBtn");
 const statusEl = document.getElementById("status");
 
-// =========================
-// STATE
-// =========================
+// 🎭 State Firebase / Sync
 let isHost = false;
 let syncing = false;
 let forceMutedForAutoplay = false;
 
+// 🎭 State recherche
 let selectedShowId = null;
 let selectedShowName = "";
 let selectedMediaType = "tv";
@@ -133,9 +95,7 @@ let searchTimeout;
 let availablePlayers = [];
 let currentVideoUrl = "";
 
-// =========================
-// STATUS
-// =========================
+// 📢 Status
 function setStatus(text) {
   statusEl.innerText = text;
 }
@@ -148,7 +108,7 @@ function setDropdownVisible(visible) {
 }
 
 // =========================
-// RECHERCHE TMDB
+// RECHERCHE TMDB FILMS + SERIES
 // =========================
 searchInput.addEventListener("input", (e) => {
   clearTimeout(searchTimeout);
@@ -493,10 +453,10 @@ async function getSelectedPlayerUrl() {
   console.log("LECTEUR CHOISI :", selectedPlayer);
   console.log("URL LECTEUR CHOISI :", selectedPlayer.url);
 
-  currentVideoUrl = normalizeVideoUrl(selectedPlayer.url);
+  currentVideoUrl = selectedPlayer.url;
   videoUrl.value = selectedPlayer.url;
 
-  return currentVideoUrl;
+  return selectedPlayer.url;
 }
 
 if (playerSelect) {
@@ -593,9 +553,7 @@ async function fetchPlayersFromSelectedMedia() {
   return await getSelectedPlayerUrl();
 }
 
-// =========================
-// HELPERS VIDEO
-// =========================
+// ⏱️ Helpers
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 function waitPlayerReady() {
@@ -614,16 +572,8 @@ function waitSeeked() {
   });
 }
 
-// =========================
-// DETECTION TYPE VIDEO
-// =========================
+// 🧠 Détection intelligente du type vidéo
 async function guessType(url) {
-  url = normalizeVideoUrl(url);
-
-  if (url.includes("drive.google.com")) {
-    return "video/mp4";
-  }
-
   if (url.includes(".m3u8")) {
     return "application/x-mpegURL";
   }
@@ -685,16 +635,14 @@ async function guessType(url) {
   return "video/mp4";
 }
 
-// =========================
-// HOST -> FIREBASE
-// =========================
+// 📤 HOST -> Firebase
 async function pushState() {
   if (!isHost || !player.src() || syncing) {
     return;
   }
 
   await set(roomRef, {
-    url: normalizeVideoUrl(player.src()),
+    url: player.src(),
     time: player.currentTime(),
     paused: player.paused(),
     updatedAt: getNetworkTime()
@@ -703,25 +651,16 @@ async function pushState() {
 
 async function startHostPlayback(url) {
   isHost = true;
+  setStatus("👑 Hôte (Envoi de la synchro)");
   syncing = true;
 
-  const finalUrl = normalizeVideoUrl(url);
-
-  if (!finalUrl) {
-    syncing = false;
-    return alert("URL vidéo invalide.");
-  }
-
-  setStatus("👑 Hôte (Envoi de la synchro)");
-
   try {
-    const type = await guessType(finalUrl);
+    const type = await guessType(url);
 
-    console.log("🎥 URL finale :", finalUrl);
     console.log("🎥 Type détecté :", type);
 
     player.src({
-      src: finalUrl,
+      src: url,
       type
     });
 
@@ -736,9 +675,7 @@ async function startHostPlayback(url) {
   }
 }
 
-// =========================
-// HOST START
-// =========================
+// ▶️ HOST START
 hostBtn.onclick = async () => {
   let url = null;
 
@@ -748,7 +685,7 @@ hostBtn.onclick = async () => {
     }
 
     if (!url) {
-      url = normalizeVideoUrl(videoUrl.value);
+      url = videoUrl.value.trim();
     }
 
     if (!url) {
@@ -762,9 +699,7 @@ hostBtn.onclick = async () => {
   }
 };
 
-// =========================
-// JOIN
-// =========================
+// 👥 JOIN
 joinBtn.onclick = async () => {
   isHost = false;
 
@@ -782,9 +717,7 @@ joinBtn.onclick = async () => {
   await forceSync();
 };
 
-// =========================
-// RESYNC
-// =========================
+// 🔄 RESYNC
 syncBtn.onclick = async () => {
   if (isHost) {
     await pushState();
@@ -795,23 +728,18 @@ syncBtn.onclick = async () => {
   }
 };
 
-// =========================
-// APPLICATION SYNC
-// =========================
+// 🎯 Application de la synchro
 async function applySync(data) {
   syncing = true;
 
-  const syncedUrl = normalizeVideoUrl(data.url);
-
   try {
-    if (player.src() !== syncedUrl) {
-      const type = await guessType(syncedUrl);
+    if (player.src() !== data.url) {
+      const type = await guessType(data.url);
 
-      console.log("🎥 URL synchronisée :", syncedUrl);
       console.log("🎥 Type détecté :", type);
 
       player.src({
-        src: syncedUrl,
+        src: data.url,
         type
       });
 
@@ -865,17 +793,13 @@ async function applySync(data) {
   }
 }
 
-// =========================
-// FIREBASE LISTENER
-// =========================
+// 👂 Firebase listener
 onValue(roomRef, async (snap) => {
   const data = snap.val();
 
   if (!data || isHost || syncing) {
     return;
   }
-
-  const syncedUrl = normalizeVideoUrl(data.url);
 
   const latency =
     (getNetworkTime() - data.updatedAt) / 1000;
@@ -888,20 +812,15 @@ onValue(roomRef, async (snap) => {
     Math.abs(player.currentTime() - target);
 
   if (
-    player.src() !== syncedUrl ||
+    player.src() !== data.url ||
     drift > 2 ||
     player.paused() !== data.paused
   ) {
-    await applySync({
-      ...data,
-      url: syncedUrl
-    });
+    await applySync(data);
   }
 });
 
-// =========================
-// FORCE SYNC
-// =========================
+// 🔄 Force sync
 async function forceSync() {
   const snap = await get(roomRef);
   const data = snap.val();
@@ -911,16 +830,12 @@ async function forceSync() {
   }
 }
 
-// =========================
-// EVENTS HOST
-// =========================
+// 🎮 Events HOST
 player.on("play", pushState);
 player.on("pause", pushState);
 player.on("seeked", pushState);
 
-// =========================
-// HEARTBEAT HOST
-// =========================
+// ⏱️ Heartbeat HOST
 setInterval(() => {
   if (isHost && !player.paused()) {
     pushState();
