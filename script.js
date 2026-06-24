@@ -438,12 +438,10 @@ function populatePlayers(players) {
     return label.toLowerCase().includes("afroditi");
   });
   
-  console.log("INDEX AFRODITI :", afroditiIndex);
-  
   if (afroditiIndex >= 0) {
     playerSelect.value = String(afroditiIndex);
   } else {
-    playerSelect.value = "";
+    playerSelect.value = 0;
   }
 }
 
