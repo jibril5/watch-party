@@ -433,14 +433,17 @@ function populatePlayers(players) {
     playerSelect.appendChild(option);
   });
 
-  const afroditiIndex = players.findIndex(p =>
-    (p.provider || "").toLowerCase().includes("afroditi") ||
-    (p.id || "").toLowerCase().includes("afroditi")
-  );
+  const afroditiIndex = players.findIndex(p => {
+    const label = `${p.provider} - ${p.service} - ${p.quality} - ${p.language} - ${p.type}`;
+    return label.toLowerCase().includes("afroditi");
+  });
+  
+  console.log("INDEX AFRODITI :", afroditiIndex);
+  
   if (afroditiIndex >= 0) {
     playerSelect.value = String(afroditiIndex);
   } else {
-    playerSelect.value = "0";
+    playerSelect.value = "";
   }
 }
 
