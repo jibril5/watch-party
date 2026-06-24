@@ -41,6 +41,28 @@ function getNetworkTime() {
   return Date.now() + serverTimeOffset;
 }
 
+// =========================
+// YOUTUBE HELPERS
+// =========================
+function isYouTubeUrl(url) {
+  return /(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/embed\/)/.test(url);
+}
+
+function extractYouTubeId(url) {
+  const match = url.match(
+    /(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
+  );
+  return match ? match[1] : null;
+}
+
+function normalizeUrl(url) {
+  if (isYouTubeUrl(url)) {
+    const id = extractYouTubeId(url);
+    return id ? `https://www.youtube.com/watch?v=${id}` : url;
+  }
+  return url;
+}
+
 // 🎥 Video.js
 const player = videojs("video", {
   controls: true,
@@ -49,6 +71,21 @@ const player = videojs("video", {
   fluid: true,
   responsive: true,
   fill: true,
+
+  techOrder: ["youtube", "html5"],
+
+  youtube: {
+    iv_load_policy: 3,
+    modestbranding: 1,
+    rel: 0,
+    endscreen: 0,
+    controls: 0,
+    ytControls: 0,
+    preload: "auto",
+    showinfo: 0,
+    fs: 0,
+    playsinline: 1,
+  },
 
   controlBar: {
     volumePanel: {
@@ -60,7 +97,6 @@ const player = videojs("video", {
     vhs: {
       overrideNative: true
     },
-
     nativeVideoTracks: false,
     nativeAudioTracks: false,
     nativeTextTracks: false
@@ -574,6 +610,11 @@ function waitSeeked() {
 
 // 🧠 Détection intelligente du type vidéo
 async function guessType(url) {
+  // YouTube en priorité
+  if (isYouTubeUrl(url)) {
+    return "video/youtube";
+  }
+
   if (url.includes(".m3u8")) {
     return "application/x-mpegURL";
   }
@@ -649,20 +690,39 @@ async function pushState() {
   });
 }
 
+// 🎥 Charge la source dans le player selon le type (YouTube ou autre)
+async function loadSource(url) {
+  const normalized = normalizeUrl(url);
+  const type = await guessType(normalized);
+  const isYT = type === "video/youtube";
+
+  console.log("🎥 Type détecté :", type, "| YouTube :", isYT);
+
+  player.src({
+    src: normalized,
+    type,
+    // Force la tech YouTube si besoin, sinon html5
+    ...(isYT ? {} : {})
+  });
+
+  // Pour YouTube, on change la techOrder dynamiquement
+  if (isYT) {
+    player.options_.techOrder = ["youtube", "html5"];
+  } else {
+    player.options_.techOrder = ["html5", "youtube"];
+  }
+
+  return normalized;
+}
+
+// 📤 HOST -> Firebase
 async function startHostPlayback(url) {
   isHost = true;
   setStatus("👑 Hôte (Envoi de la synchro)");
   syncing = true;
 
   try {
-    const type = await guessType(url);
-
-    console.log("🎥 Type détecté :", type);
-
-    player.src({
-      src: url,
-      type
-    });
+    const normalized = await loadSource(url);
 
     await waitPlayerReady();
     await player.play();
@@ -680,16 +740,17 @@ hostBtn.onclick = async () => {
   let url = null;
 
   try {
-    if (selectedShowId) {
+    // Priorité : URL manuelle (YouTube ou autre)
+    const manualUrl = videoUrl.value.trim();
+
+    if (manualUrl) {
+      url = manualUrl;
+    } else if (selectedShowId) {
       url = await fetchPlayersFromSelectedMedia();
     }
 
     if (!url) {
-      url = videoUrl.value.trim();
-    }
-
-    if (!url) {
-      return alert("Sélectionne une série/un film ou entre une URL vidéo.");
+      return alert("Sélectionne une série/un film, entre une URL vidéo ou un lien YouTube.");
     }
 
     await startHostPlayback(url);
@@ -733,16 +794,11 @@ async function applySync(data) {
   syncing = true;
 
   try {
-    if (player.src() !== data.url) {
-      const type = await guessType(data.url);
+    const normalizedIncoming = normalizeUrl(data.url);
+    const normalizedCurrent  = normalizeUrl(player.src() || "");
 
-      console.log("🎥 Type détecté :", type);
-
-      player.src({
-        src: data.url,
-        type
-      });
-
+    if (normalizedCurrent !== normalizedIncoming) {
+      await loadSource(data.url);
       await waitPlayerReady();
     }
 
@@ -811,8 +867,11 @@ onValue(roomRef, async (snap) => {
   const drift =
     Math.abs(player.currentTime() - target);
 
+  const normalizedIncoming = normalizeUrl(data.url);
+  const normalizedCurrent  = normalizeUrl(player.src() || "");
+
   if (
-    player.src() !== data.url ||
+    normalizedCurrent !== normalizedIncoming ||
     drift > 2 ||
     player.paused() !== data.paused
   ) {
