@@ -62,7 +62,9 @@ function normalizeUrl(url) {
   }
   return url;
 }
-
+player.on("play", () => {
+  console.log("player.src() =", player.src());
+});
 // 🎥 Video.js
 const player = videojs("video", {
   controls: true,
