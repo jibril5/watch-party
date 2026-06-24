@@ -434,8 +434,8 @@ function populatePlayers(players) {
   });
 
   const afroditiIndex = players.findIndex(p =>
-    p.provider.toLowerCase() === "afroditi" ||
-    p.id.toLowerCase() === "afroditi"
+    (p.provider || "").toLowerCase().includes("afroditi") ||
+    (p.id || "").toLowerCase().includes("afroditi")
   );
 
   playerSelect.value = afroditiIndex >= 0 ? String(afroditiIndex) : "0";
