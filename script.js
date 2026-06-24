@@ -437,8 +437,11 @@ function populatePlayers(players) {
     (p.provider || "").toLowerCase().includes("afroditi") ||
     (p.id || "").toLowerCase().includes("afroditi")
   );
-
-  playerSelect.value = afroditiIndex >= 0 ? String(afroditiIndex) : "0";
+  if (afroditiIndex >= 0) {
+    playerSelect.value = String(afroditiIndex);
+  } else {
+    playerSelect.value = "0";
+  }
 }
 
 async function getSelectedPlayerUrl() {
