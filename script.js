@@ -492,7 +492,7 @@ function buildSourceApiUrl() {
       : "";
 
     return (
-      `https://4afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
+      `https://5afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
       `?tmdbId=${selectedShowId}` +
       `&type=movie` +
       `&imdbId=${encodeURIComponent(selectedMovieData.imdb_id || "")}` +
@@ -511,7 +511,7 @@ function buildSourceApiUrl() {
   }
 
   return (
-    `https://4afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
+    `https://5afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
     `?tmdbId=${selectedShowId}` +
     `&type=tv` +
     `&title=${encodeURIComponent(selectedShowName)}` +
