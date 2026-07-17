@@ -107,6 +107,28 @@ function setDropdownVisible(visible) {
   resultsDiv.style.display = visible ? "block" : "none";
 }
 
+function buildPeachifyUrl() {
+
+    const params = new URLSearchParams({
+
+        autoNext: 30,
+        accent: "ff66cc",
+        server: "iron",
+        dub: "French",
+        sub: "French"
+
+    });
+
+    if (selectedMediaType === "movie") {
+
+        return `https://peachify.pro/embed/movie/${selectedShowId}?${params}`;
+
+    }
+
+    return `https://peachify.pro/embed/tv/${selectedShowId}/${seasonSelect.value}/${episodeSelect.value}?${params}`;
+
+}
+
 // =========================
 // RECHERCHE TMDB FILMS + SERIES
 // =========================
@@ -663,10 +685,9 @@ async function startHostPlayback(url) {
 
     console.log("🎥 Type détecté :", type);
 
-    player.src({
-      src: url,
-      type
-    });
+    const iframe = document.getElementById("playerFrame");
+    
+    iframe.src = buildPeachifyUrl();
 
     await waitPlayerReady();
     await player.play();
