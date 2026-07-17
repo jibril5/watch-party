@@ -1,890 +1,545 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getDatabase,
-  ref,
-  set,
-  onValue,
-  get
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-
-// =========================
-// CONFIG
-// =========================
-const API_KEY = "09c2df46123d7a1da00dbb9e60a36a31";
-const WORKER_PROXY = "https://watch-party-proxy.dahmani-jibril.workers.dev/?url=";
-
-// 🔥 Firebase
-const firebaseConfig = {
-  apiKey: "AIzaSyB381f6lObetJhgiO-egZdrG3rVbQK8T3M",
-  authDomain: "watch-party-d3f69.firebaseapp.com",
-  databaseURL: "https://watch-party-d3f69-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "watch-party-d3f69",
-  storageBucket: "watch-party-d3f69.firebasestorage.app",
-  messagingSenderId: "568073707307",
-  appId: "1:568073707307:web:b45e8f9e3f4770c09fef6e"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const roomRef = ref(db, "room");
-
-// 🕒 Synchronisation horloge Firebase
-let serverTimeOffset = 0;
-
-const offsetRef = ref(db, ".info/serverTimeOffset");
-
-onValue(offsetRef, (snap) => {
-  serverTimeOffset = snap.val() || 0;
-});
-
-function getNetworkTime() {
-  return Date.now() + serverTimeOffset;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-// 🎥 Video.js
-const player = videojs("video", {
-  controls: true,
-  preload: "auto",
-  playsinline: true,
-  fluid: true,
-  responsive: true,
-  fill: true,
-
-  controlBar: {
-    volumePanel: {
-      inline: false
-    }
-  },
-
-  html5: {
-    vhs: {
-      overrideNative: true
-    },
-
-    nativeVideoTracks: false,
-    nativeAudioTracks: false,
-    nativeTextTracks: false
-  }
-});
-
-// 🎭 DOM
-const searchInput = document.getElementById("searchInput");
-const resultsDiv = document.getElementById("searchResults");
-const seasonSelect = document.getElementById("seasonSelect");
-const episodeSelect = document.getElementById("episodeSelect");
-const playerSelect = document.getElementById("playerSelect");
-
-const videoUrl = document.getElementById("videoUrl");
-const hostBtn  = document.getElementById("hostBtn");
-const joinBtn  = document.getElementById("joinBtn");
-const syncBtn  = document.getElementById("syncBtn");
-const statusEl = document.getElementById("status");
-
-// 🎭 State Firebase / Sync
-let isHost = false;
-let syncing = false;
-let forceMutedForAutoplay = false;
-
-// 🎭 State recherche
-let selectedShowId = null;
-let selectedShowName = "";
-let selectedMediaType = "tv";
-let selectedMovieData = null;
-let selectedSeasons = [];
-let searchTimeout;
-let availablePlayers = [];
-let currentVideoUrl = "";
-
-// 📢 Status
-function setStatus(text) {
-  statusEl.innerText = text;
+body {
+  min-height: 100vh;
+  font-family: "Inter", sans-serif;
+  color: white;
+  overflow-x: hidden;
+  background:
+    linear-gradient(rgba(10, 10, 20, 0.38), rgba(10, 10, 20, 0.32)),
+    url("background.jpg");
+  background-size: cover;
+  background-position: center 20%;
+  background-attachment: scroll;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 20px;
 }
 
-// =========================
-// DROPDOWN
-// =========================
-function setDropdownVisible(visible) {
-  resultsDiv.style.display = visible ? "block" : "none";
+.container {
+  width: 100%;
+  max-width: 1000px;
+  background: rgba(15, 23, 42, 0.02);
+  border-radius: 15px;
+  padding: 24px;
 }
 
-function buildPeachifyUrl() {
-
-    const params = new URLSearchParams({
-
-        autoNext: 30,
-        accent: "ff66cc",
-        server: "iron",
-        dub: "French",
-        sub: "French"
-
-    });
-
-    if (selectedMediaType === "movie") {
-
-        return `https://peachify.pro/embed/movie/${selectedShowId}?${params}`;
-
-    }
-
-    return `https://peachify.pro/embed/tv/${selectedShowId}/${seasonSelect.value}/${episodeSelect.value}?${params}`;
-
+h1 {
+  text-align: center;
+  font-size: 3rem;
+  margin-bottom: 30px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  background: linear-gradient(90deg, #ffffff, #d8b4fe, #4db4e7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 3px 8px rgba(168, 85, 247, 0.2);
 }
 
-// =========================
-// RECHERCHE TMDB FILMS + SERIES
-// =========================
-searchInput.addEventListener("input", (e) => {
-  clearTimeout(searchTimeout);
-
-  searchTimeout = setTimeout(async () => {
-    const query = e.target.value.trim();
-
-    if (query.length < 3) {
-      resultsDiv.innerHTML = "";
-      setDropdownVisible(false);
-      return;
-    }
-
-    try {
-      const url =
-        `https://api.themoviedb.org/3/search/multi` +
-        `?api_key=${API_KEY}` +
-        `&query=${encodeURIComponent(query)}` +
-        `&language=fr-FR`;
-
-      const res = await fetch(url);
-
-      if (!res.ok) throw new Error(res.status);
-
-      const data = await res.json();
-
-      displayResults(data.results || []);
-    } catch (err) {
-      console.error("Erreur recherche TMDB :", err);
-
-      resultsDiv.innerHTML =
-        `<div class="result-item">Erreur de chargement</div>`;
-
-      setDropdownVisible(true);
-    }
-  }, 300);
-});
-
-// =========================
-// AFFICHER RESULTATS
-// =========================
-function displayResults(results) {
-  resultsDiv.innerHTML = "";
-
-  const filteredResults = results.filter(item =>
-    item.media_type === "tv" || item.media_type === "movie"
-  );
-
-  if (!filteredResults.length) {
-    resultsDiv.innerHTML =
-      `<div class="result-item">Aucun résultat trouvé</div>`;
-
-    setDropdownVisible(true);
-    return;
-  }
-
-  filteredResults.slice(0, 8).forEach(item => {
-    const div = document.createElement("div");
-    div.className = "result-item result-with-poster";
-
-    const title =
-      item.media_type === "movie"
-        ? item.title
-        : item.name;
-
-    const date =
-      item.media_type === "movie"
-        ? item.release_date
-        : item.first_air_date;
-
-    const year = date ? date.split("-")[0] : "Date inconnue";
-
-    const typeLabel =
-      item.media_type === "movie"
-        ? "Film"
-        : "Série";
-
-    const posterUrl = item.poster_path
-      ? `https://image.tmdb.org/t/p/w92${item.poster_path}`
-      : "https://via.placeholder.com/60x90?text=?";
-
-    div.innerHTML = `
-      <div>
-        <strong>${title}</strong>
-        <div style="font-size:12px;opacity:0.6">
-          ${typeLabel} • ${year}
-        </div>
-      </div>
-
-      <img class="result-poster" src="${posterUrl}" alt="${title}">
-    `;
-
-    div.addEventListener("click", () => selectMedia(item));
-
-    resultsDiv.appendChild(div);
-  });
-
-  setDropdownVisible(true);
+.symbol {
+  font-size: 0.65em;
+  opacity: 0.7;
+  position: relative;
+  top: -4px;
 }
 
-// =========================
-// SELECTION FILM OU SERIE
-// =========================
-async function selectMedia(item) {
-  selectedShowId = item.id;
-  selectedMediaType = item.media_type;
-  selectedMovieData = null;
-
-  selectedShowName =
-    item.media_type === "movie"
-      ? item.title
-      : item.name;
-
-  searchInput.value = selectedShowName;
-
-  resultsDiv.innerHTML = "";
-  setDropdownVisible(false);
-
-  resetPlayers();
-
-  if (selectedMediaType === "movie") {
-    seasonSelect.style.display = "none";
-    episodeSelect.style.display = "none";
-
-    setStatus(`Chargement du film ${selectedShowName}...`);
-
-    try {
-      const url =
-        `https://api.themoviedb.org/3/movie/${item.id}` +
-        `?api_key=${API_KEY}` +
-        `&language=fr-FR`;
-
-      const res = await fetch(url);
-
-      if (!res.ok) throw new Error(res.status);
-
-      selectedMovieData = await res.json();
-
-      setStatus(`Film sélectionné : ${selectedShowName}`);
-    } catch (err) {
-      console.error("Erreur chargement film :", err);
-      setStatus("Erreur chargement film.");
-    }
-
-    return;
-  }
-
-  seasonSelect.style.display = "block";
-  episodeSelect.style.display = "block";
-
-  setStatus(`Chargement de ${selectedShowName}...`);
-
-  try {
-    const url =
-      `https://api.themoviedb.org/3/tv/${item.id}` +
-      `?api_key=${API_KEY}` +
-      `&language=fr-FR`;
-
-    const res = await fetch(url);
-
-    if (!res.ok) throw new Error(res.status);
-
-    const data = await res.json();
-
-    selectedSeasons = (data.seasons || []).filter(
-      s => s.season_number > 0
-    );
-
-    populateSeasons(selectedSeasons);
-
-    setStatus(`Série sélectionnée : ${selectedShowName}`);
-  } catch (err) {
-    console.error("Erreur chargement série :", err);
-    setStatus("Erreur chargement série.");
-  }
+.controls-card {
+  position: relative;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow:
+    0 10px 40px rgba(0,0,0,0.5),
+    0 0 60px rgba(99,102,241,0.15);
+  margin-bottom: 24px;
 }
 
-// =========================
-// SAISONS
-// =========================
-function populateSeasons(seasons) {
-  seasonSelect.innerHTML =
-    '<option value="">Choisir une saison</option>';
-
-  episodeSelect.innerHTML =
-    '<option value="">Choisir un épisode</option>';
-
-  resetPlayers();
-
-  seasons.forEach(season => {
-    const option = document.createElement("option");
-
-    option.value = season.season_number;
-    option.textContent = season.name;
-
-    seasonSelect.appendChild(option);
-  });
-
-  seasonSelect.removeEventListener("change", loadEpisodes);
-  seasonSelect.addEventListener("change", loadEpisodes);
-
-  if (seasons.length > 0) {
-    seasonSelect.value = seasons[0].season_number;
-    loadEpisodes();
-  }
+.search-card {
+  position: relative;
+  z-index: 1001;
 }
 
-// =========================
-// EPISODES
-// =========================
-async function loadEpisodes() {
-  if (!selectedShowId) return;
-
-  const seasonNumber = seasonSelect.value;
-
-  resetPlayers();
-
-  if (!seasonNumber) return;
-
-  try {
-    const url =
-      `https://api.themoviedb.org/3/tv/${selectedShowId}/season/${seasonNumber}` +
-      `?api_key=${API_KEY}` +
-      `&language=fr-FR`;
-
-    const res = await fetch(url);
-
-    if (!res.ok) throw new Error(res.status);
-
-    const data = await res.json();
-
-    episodeSelect.innerHTML = "";
-
-    if (!data.episodes || !data.episodes.length) {
-      episodeSelect.innerHTML =
-        `<option value="">Aucun épisode trouvé</option>`;
-      return;
-    }
-
-    data.episodes.forEach(ep => {
-      const option = document.createElement("option");
-
-      option.value = ep.episode_number;
-      option.textContent = `Épisode ${ep.episode_number} - ${ep.name}`;
-
-      episodeSelect.appendChild(option);
-    });
-  } catch (err) {
-    console.error("Erreur chargement épisodes :", err);
-
-    episodeSelect.innerHTML =
-      `<option value="">Erreur chargement</option>`;
-  }
+.input-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 18px;
 }
 
-// =========================
-// LECTEURS
-// =========================
-function resetPlayers() {
-  availablePlayers = [];
-  currentVideoUrl = "";
-
-  if (playerSelect) {
-    playerSelect.innerHTML =
-      `<option value="">Choisir un lecteur</option>`;
-  }
+.input-wrapper i {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  font-size: 16px;
+  pointer-events: none;
 }
 
-function extractPlayers(text) {
-  const players = [];
+input {
+  width: 100%;
+  padding: 18px 20px 18px 50px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(2, 6, 23, 0.9);
+  color: white;
+  font-size: 16px;
+  transition: 0.25s ease;
+}
 
-  const blocks = text
-    .split("\n")
-    .map(line => line.trim())
-    .filter(line => line.startsWith("{") && line.endsWith("}"));
+input::placeholder {
+  color: #94a3b8;
+}
 
-  for (const block of blocks) {
-    try {
-      const providerData = JSON.parse(block);
+input:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow:
+    0 0 0 4px rgba(139,92,246,0.15),
+    0 0 25px rgba(139,92,246,0.3);
+}
 
-      if (!Array.isArray(providerData.items)) continue;
+.dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% - 12px);
+  left: 0;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 14px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 99999;
+  box-shadow: 0 12px 35px rgba(0,0,0,0.7);
+}
 
-      providerData.items.forEach(item => {
-        if (!item.url) return;
+.result-item {
+  padding: 12px 20px !important;
+  color: #e2e8f0;
+  transition: background 0.2s ease, padding-left 0.2s ease;
+  cursor: pointer;
+}
 
-        players.push({
-          id: providerData.id || "",
-          provider: item.provider || providerData.id || "Inconnu",
-          service: item.service || "inconnu",
-          quality: item.quality || "unknown",
-          language: item.language || "unknown",
-          type: item.type || "unknown",
-          proxied: item.proxied === true,
-          url: item.url
-        });
-      });
-    } catch (err) {
-      console.warn("JSON ignoré :", block);
-    }
+.result-item:hover {
+  background: rgba(139, 92, 246, 0.25);
+  padding-left: 25px !important;
+}
+
+.result-item strong {
+  display: block;
+  font-size: 15px;
+  color: #ffffff;
+  margin-bottom: 2px;
+}
+
+.result-with-poster {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.result-poster {
+  width: 44px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+}
+
+.dropdown::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdown::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 999px;
+}
+
+.selectors {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.selectors select {
+  flex: 1;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.9);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: white;
+  font-size: 15px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.25s;
+  min-width: 0;
+}
+
+.selectors select:focus {
+  border-color: #8b5cf6;
+}
+
+.buttons {
+  display: flex;
+  gap: 14px;
+}
+
+button {
+  flex: 1;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%);
+  transition: 0.5s;
+}
+
+button:hover::before {
+  transform: translateX(100%);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ff4d6d, #ff006e);
+  color: white;
+  box-shadow: 0 10px 25px rgba(255,0,110,0.1);
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 14px 35px rgba(255,0,110,0.25);
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  color: white;
+  box-shadow: 0 10px 25px rgba(99,102,241,0.18);
+}
+
+.btn-secondary:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 14px 35px rgba(99,102,241,0.25);
+}
+
+.btn-outline {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #e2e8f0;
+}
+
+.btn-outline:hover {
+  background: rgba(255,255,255,0.08);
+  transform: translateY(-3px);
+}
+
+.status-badge {
+  width: fit-content;
+  margin: 0 auto 24px auto;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(12px);
+  font-size: 14px;
+  font-weight: 600;
+  color: #cbd5e1;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+}
+
+.video-section,
+.video-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+.video-wrapper {
+  border-radius: 28px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 20px 50px rgba(0,0,0,0.6),
+    0 0 80px rgba(99,102,241,0.15);
+  animation: fadeIn 0.8s ease;
+  aspect-ratio: 16 / 9;
+}
+
+.video-js {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 28px;
+  overflow: hidden;
+  font-family: "Inter", sans-serif;
+  background-color: #000;
+}
+
+.video-js .vjs-tech {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+}
+
+.video-js .vjs-control-bar {
+  background: linear-gradient(to top, rgba(5, 5, 20, 0.92), transparent);
+  border-radius: 0 0 28px 28px;
+  padding: 0 8px 6px;
+  height: 44px;
+  font-size: 13px;
+}
+
+.video-js .vjs-button > .vjs-icon-placeholder::before,
+.video-js .vjs-time-control {
+  color: #e2e8f0;
+}
+
+.video-js .vjs-progress-holder {
+  background: rgba(255,255,255,0.15);
+  border-radius: 999px;
+}
+
+.video-js .vjs-play-progress {
+  background: linear-gradient(90deg, #ff4d6d, #8b5cf6);
+  border-radius: 999px;
+}
+
+.video-js .vjs-load-progress {
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+}
+
+.video-js .vjs-play-progress::before {
+  color: #ff4d6d;
+  font-size: 14px;
+  top: -4px;
+}
+
+.video-js .vjs-volume-level {
+  background: linear-gradient(90deg, #8b5cf6, #2563eb);
+  border-radius: 999px;
+}
+
+.video-js .vjs-volume-bar.vjs-slider-horizontal {
+  background: rgba(255,255,255,0.15);
+  border-radius: 999px;
+}
+
+.video-js .vjs-big-play-button {
+  background: rgba(139, 92, 246, 0.55);
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  width: 72px;
+  height: 72px;
+  line-height: 72px;
+  font-size: 28px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.video-js:hover .vjs-big-play-button,
+.video-js .vjs-big-play-button:focus {
+  background: rgba(139, 92, 246, 0.8);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.video-js .vjs-current-time,
+.video-js .vjs-time-divider,
+.video-js .vjs-duration {
+  display: block !important;
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.video-js .vjs-fullscreen-control .vjs-icon-placeholder::before,
+.video-js .vjs-mute-control .vjs-icon-placeholder::before,
+.video-js .vjs-play-control .vjs-icon-placeholder::before {
+  color: #e2e8f0;
+}
+
+.video-js .vjs-control:hover .vjs-icon-placeholder::before {
+  color: #ffffff;
+  text-shadow: 0 0 8px rgba(139,92,246,0.7);
+}
+
+.video-js .vjs-no-flex .vjs-tech {
+  border-radius: 28px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
 
-  return players;
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-function populatePlayers(players) {
-  playerSelect.innerHTML =
-    `<option value="">Choisir un lecteur</option>`;
-
-  if (!players.length) {
-    playerSelect.innerHTML =
-      `<option value="">Aucun lecteur trouvé</option>`;
-    return;
+@media (max-width: 768px) {
+  h1 {
+    font-size: 2rem;
   }
 
-  players.forEach((p, index) => {
-    const option = document.createElement("option");
+  .buttons,
+  .selectors {
+    flex-direction: column;
+  }
 
-    option.value = String(index);
-    option.textContent =
-      `${p.provider} - ${p.service} - ${p.quality} - ${p.language} - ${p.type}`;
+  button {
+    width: 100%;
+  }
 
-    playerSelect.appendChild(option);
-  });
+  .controls-card {
+    padding: 18px;
+  }
 
-  const afroditiIndex = players.findIndex(p => {
-    const label = `${p.provider} - ${p.service} - ${p.quality} - ${p.language} - ${p.type}`;
-    return label.toLowerCase().includes("afroditi");
-  });
+  .video-js .vjs-big-play-button {
+    width: 56px;
+    height: 56px;
+    line-height: 56px;
+    font-size: 22px;
+  }
+
+  .video-js .vjs-control-bar {
+    height: 36px;
+    padding: 0 2px 2px;
+    font-size: 11px;
+  }
+
+  .video-js .vjs-control {
+    width: 2.8em;
+  }
+
+  .video-js .vjs-remaining-time {
+    display: none !important;
+  }
+
+  .video-js .vjs-current-time,
+  .video-js .vjs-duration,
+  .video-js .vjs-time-divider {
+    padding: 0 2px;
+    font-size: 10px;
+  }
+
+  .video-js .vjs-volume-panel {
+    display: none !important;
+  }
+
+  .video-js .vjs-fullscreen-control {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .video-js .vjs-control-bar > * {
+    flex-shrink: 1;
+  }
+
+  .video-js .vjs-progress-control {
+    flex: 1;
+    min-width: 30px;
+  }
+  .video-js.vjs-fullscreen,
+  .video-js.vjs-fullscreen .vjs-tech,
+  .video-js.vjs-fullscreen video,
+  .video-js.vjs-fullscreen .vjs-control-bar {
+    border-radius: 0 !important;
+  }
   
-  if (afroditiIndex >= 0) {
-    playerSelect.value = String(afroditiIndex);
-  } else {
-    playerSelect.value = 0;
+  .video-js.vjs-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
   }
+  .video-wrapper:has(.video-js.vjs-fullscreen) {
+  border-radius: 0 !important;
+}
+}
+/* =====================================
+   FULLSCREEN FIX VIDEO.JS
+===================================== */
+
+body.vjs-full-window,
+html.vjs-full-window {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #000 !important;
 }
 
-async function getSelectedPlayerUrl() {
-  const index = Number(playerSelect.value);
-
-  if (Number.isNaN(index) || !availablePlayers[index]) {
-    return null;
-  }
-
-  const selectedPlayer = availablePlayers[index];
-
-  console.log("LECTEUR CHOISI :", selectedPlayer);
-  console.log("URL LECTEUR CHOISI :", selectedPlayer.url);
-
-  currentVideoUrl = selectedPlayer.url;
-  videoUrl.value = selectedPlayer.url;
-
-  return selectedPlayer.url;
+body.vjs-full-window .container,
+body.vjs-full-window .video-wrapper,
+body.vjs-full-window .video-js,
+body.vjs-full-window .vjs-tech,
+body.vjs-full-window video {
+  border-radius: 0 !important;
 }
 
-if (playerSelect) {
-  playerSelect.addEventListener("change", async () => {
-    const url = await getSelectedPlayerUrl();
-
-    if (!url) return;
-
-    setStatus(`Lecteur sélectionné : ${availablePlayers[Number(playerSelect.value)].provider}`);
-
-    if (isHost && player.src()) {
-      await startHostPlayback(url);
-    }
-  });
+.video-js.vjs-fullscreen,
+.video-js.vjs-fullscreen .vjs-tech,
+.video-js.vjs-fullscreen video,
+.video-js.vjs-fullscreen .vjs-control-bar {
+  border-radius: 0 !important;
 }
 
-// =========================
-// CREATION URL API SOURCE
-// =========================
-function buildSourceApiUrl() {
-  if (selectedMediaType === "movie") {
-    if (!selectedMovieData) {
-      alert("Les infos du film ne sont pas encore chargées.");
-      return null;
-    }
-
-    const releaseYear = selectedMovieData.release_date
-      ? selectedMovieData.release_date.split("-")[0]
-      : "";
-
-    return (
-      `https://5afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
-      `?tmdbId=${selectedShowId}` +
-      `&type=movie` +
-      `&imdbId=${encodeURIComponent(selectedMovieData.imdb_id || "")}` +
-      `&title=${encodeURIComponent(selectedMovieData.title || selectedShowName)}` +
-      `&releaseYear=${encodeURIComponent(releaseYear)}` +
-      `&originalTitle=${encodeURIComponent(selectedMovieData.original_title || selectedShowName)}`
-    );
-  }
-
-  const season = seasonSelect.value;
-  const episode = episodeSelect.value;
-
-  if (!season || !episode) {
-    alert("Choisis saison + épisode !");
-    return null;
-  }
-
-  return (
-    `https://5afterdark.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
-    `?tmdbId=${selectedShowId}` +
-    `&type=tv` +
-    `&title=${encodeURIComponent(selectedShowName)}` +
-    `&season=${encodeURIComponent(season)}` +
-    `&episode=${encodeURIComponent(episode)}`
-  );
+.video-wrapper:fullscreen,
+.video-wrapper:-webkit-full-screen {
+  border-radius: 0 !important;
 }
 
-async function fetchPlayersFromSelectedMedia() {
-  const apiUrl = buildSourceApiUrl();
-
-  if (!apiUrl) return null;
-
-  console.log("API URL:", apiUrl);
-
-  setStatus("Recherche des lecteurs...");
-
-  const proxy = WORKER_PROXY + encodeURIComponent(apiUrl);
-
-  console.log("PROXY URL:", proxy);
-
-  const res = await fetch(proxy);
-
-  if (!res.ok) {
-    throw new Error(`Erreur proxy HTTP ${res.status}`);
-  }
-
-  const text = await res.text();
-
-  console.log("RAW RESPONSE:", text);
-
-  availablePlayers = extractPlayers(text);
-
-  console.log("LECTEURS DISPONIBLES :", availablePlayers);
-
-  if (!availablePlayers.length) {
-    setStatus("Aucun lecteur trouvé.");
-    return null;
-  }
-
-  populatePlayers(availablePlayers);
-
-  return await getSelectedPlayerUrl();
+.video-wrapper:fullscreen .video-js,
+.video-wrapper:fullscreen .vjs-tech,
+.video-wrapper:fullscreen video,
+.video-wrapper:-webkit-full-screen .video-js,
+.video-wrapper:-webkit-full-screen .vjs-tech,
+.video-wrapper:-webkit-full-screen video {
+  border-radius: 0 !important;
 }
 
-// ⏱️ Helpers
-const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
-function waitPlayerReady() {
-  return new Promise(resolve => {
-    if (player.readyState() >= 2) {
-      return resolve();
-    }
-
-    player.one("loadeddata", resolve);
-  });
+.video-js.vjs-fullscreen,
+body.vjs-full-window .video-js {
+  width: 100vw !important;
+  height: 100vh !important;
 }
 
-function waitSeeked() {
-  return new Promise(resolve => {
-    player.one("seeked", resolve);
-  });
+.video-js.vjs-fullscreen .vjs-tech,
+body.vjs-full-window .video-js .vjs-tech {
+  width: 100vw !important;
+  height: 100vh !important;
 }
 
-// 🧠 Détection intelligente du type vidéo
-async function guessType(url) {
-  if (url.includes(".m3u8")) {
-    return "application/x-mpegURL";
-  }
-
-  if (url.includes(".mpd")) {
-    return "application/dash+xml";
-  }
-
-  if (url.includes(".mp4")) {
-    return "video/mp4";
-  }
-
-  if (url.includes(".webm")) {
-    return "video/webm";
-  }
-
-  if (url.includes(".ogg")) {
-    return "video/ogg";
-  }
-
-  try {
-    const res = await fetch(url, {
-      method: "GET"
-    });
-
-    const contentType = res.headers.get("content-type");
-
-    console.log("Content-Type détecté :", contentType);
-
-    if (contentType?.includes("application/vnd.apple.mpegurl")) {
-      return "application/x-mpegURL";
-    }
-
-    if (contentType?.includes("application/x-mpegURL")) {
-      return "application/x-mpegURL";
-    }
-
-    if (contentType?.includes("video/mp4")) {
-      return "video/mp4";
-    }
-
-    if (contentType?.includes("video/webm")) {
-      return "video/webm";
-    }
-
-    const text = await res.text();
-
-    if (text.includes("#EXTM3U")) {
-      return "application/x-mpegURL";
-    }
-
-    if (text.includes("<MPD")) {
-      return "application/dash+xml";
-    }
-  } catch (e) {
-    console.warn("Détection MIME impossible :", e);
-  }
-
-  return "video/mp4";
+body.vjs-full-window .video-wrapper {
+  border: none !important;
+  box-shadow: none !important;
 }
-
-// 📤 HOST -> Firebase
-async function pushState() {
-  if (!isHost || !player.src() || syncing) {
-    return;
-  }
-
-  await set(roomRef, {
-    url: player.src(),
-    time: player.currentTime(),
-    paused: player.paused(),
-    updatedAt: getNetworkTime()
-  });
-}
-
-async function startHostPlayback(url) {
-  isHost = true;
-  setStatus("👑 Hôte (Envoi de la synchro)");
-  syncing = true;
-
-  try {
-    const type = await guessType(url);
-
-    console.log("🎥 Type détecté :", type);
-
-    const iframe = document.getElementById("playerFrame");
-    
-    iframe.src = buildPeachifyUrl();
-
-    await waitPlayerReady();
-    await player.play();
-    await pushState();
-  } catch (e) {
-    console.error("Erreur de lecture :", e);
-    setStatus("❌ Erreur de lecture");
-  } finally {
-    syncing = false;
-  }
-}
-
-// ▶️ HOST START
-hostBtn.onclick = async () => {
-  let url = null;
-
-  try {
-    if (selectedShowId) {
-      url = await fetchPlayersFromSelectedMedia();
-    }
-
-    if (!url) {
-      url = videoUrl.value.trim();
-    }
-
-    if (!url) {
-      return alert("Sélectionne une série/un film ou entre une URL vidéo.");
-    }
-
-    await startHostPlayback(url);
-  } catch (e) {
-    console.error("Erreur chargement vidéo :", e);
-    setStatus("Erreur chargement vidéo.");
-  }
-};
-
-// 👥 JOIN
-joinBtn.onclick = async () => {
-  isHost = false;
-
-  setStatus("👥 Spectateur (Synchronisé)");
-
-  try {
-    player.muted(true);
-    forceMutedForAutoplay = true;
-    await player.play();
-    player.pause();
-  } catch (e) {
-    console.warn("Autoplay initial bloqué", e);
-  }
-
-  await forceSync();
-};
-
-// 🔄 RESYNC
-syncBtn.onclick = async () => {
-  if (isHost) {
-    await pushState();
-    setStatus("👑 Hôte (Sync forcée envoyée)");
-  } else {
-    await forceSync();
-    setStatus("👥 Spectateur (Resync manuelle)");
-  }
-};
-
-// 🎯 Application de la synchro
-async function applySync(data) {
-  syncing = true;
-
-  try {
-    if (player.src() !== data.url) {
-      const type = await guessType(data.url);
-
-      console.log("🎥 Type détecté :", type);
-
-      player.src({
-        src: data.url,
-        type
-      });
-
-      await waitPlayerReady();
-    }
-
-    const latency = (getNetworkTime() - data.updatedAt) / 1000;
-
-    const target = data.paused
-      ? data.time
-      : data.time + latency;
-
-    const drift = Math.abs(player.currentTime() - target);
-
-    if (
-      drift > 2 ||
-      player.paused() !== data.paused
-    ) {
-      player.pause();
-      player.currentTime(target);
-
-      await waitSeeked();
-
-      if (Math.abs(player.currentTime() - target) > 0.3) {
-        player.currentTime(target);
-        await waitSeeked();
-      }
-
-      if (!data.paused) {
-        try {
-          await player.play();
-
-          if (forceMutedForAutoplay) {
-            setStatus("🔇 Vidéo lancée en sourdine (cliquez sur le volume)");
-            forceMutedForAutoplay = false;
-          }
-        } catch (e) {
-          console.warn("Autoplay bloqué :", e);
-          setStatus("📱 Autoplay bloqué. Cliquez sur Play.");
-        }
-      } else {
-        player.pause();
-      }
-    }
-  } catch (e) {
-    console.error("Erreur de synchronisation :", e);
-  } finally {
-    setTimeout(() => {
-      syncing = false;
-    }, 300);
-  }
-}
-
-// 👂 Firebase listener
-onValue(roomRef, async (snap) => {
-  const data = snap.val();
-
-  if (!data || isHost || syncing) {
-    return;
-  }
-
-  const latency =
-    (getNetworkTime() - data.updatedAt) / 1000;
-
-  const target = data.paused
-    ? data.time
-    : data.time + latency;
-
-  const drift =
-    Math.abs(player.currentTime() - target);
-
-  if (
-    player.src() !== data.url ||
-    drift > 2 ||
-    player.paused() !== data.paused
-  ) {
-    await applySync(data);
-  }
-});
-
-// 🔄 Force sync
-async function forceSync() {
-  const snap = await get(roomRef);
-  const data = snap.val();
-
-  if (data) {
-    await applySync(data);
-  }
-}
-
-// 🎮 Events HOST
-player.on("play", pushState);
-player.on("pause", pushState);
-player.on("seeked", pushState);
-
-// ⏱️ Heartbeat HOST
-setInterval(() => {
-  if (isHost && !player.paused()) {
-    pushState();
-  }
-}, 4000);
-
-// =========================
-// CLOSE DROPDOWN
-// =========================
-document.addEventListener("click", (e) => {
-  const inside =
-    searchInput.contains(e.target) ||
-    resultsDiv.contains(e.target);
-
-  if (!inside) {
-    setDropdownVisible(false);
-  }
-});
-
-// =========================
-// REOPEN DROPDOWN
-// =========================
-searchInput.addEventListener("focus", () => {
-  if (resultsDiv.innerHTML.trim() !== "") {
-    setDropdownVisible(true);
-  }
-});
