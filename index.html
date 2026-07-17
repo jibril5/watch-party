@@ -99,16 +99,20 @@
     </div>
 
     <section class="video-section">
-      <div class="video-wrapper">
-        <video
-          id="video"
-          class="video-js vjs-big-play-centered"
-          controls
-          playsinline
-          webkit-playsinline
-          preload="auto"
-        ></video>
-      </div>
+    <div class="video-wrapper">
+        <iframe
+            id="playerFrame"
+            allowfullscreen
+            allow="autoplay; fullscreen; picture-in-picture"
+            frameborder="0"
+            style="
+                width:100%;
+                height:100%;
+                border:none;
+                border-radius:15px;
+            ">
+        </iframe>
+    </div>
     </section>
   </div>
 
