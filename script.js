@@ -653,75 +653,6 @@ async function pushState() {
   });
 }
 
-async function loadEmbeddedSubtitles(url) {
-  console.log("🔎 Recherche des sous-titres intégrés...");
-
-  try {
-    // Utilise ton Worker pour éviter le problème CORS Dropbox
-    const proxyUrl =
-      WORKER_PROXY + encodeURIComponent(url);
-
-    console.log("📡 URL sous-titres via proxy :", proxyUrl);
-
-    const response = await fetch(proxyUrl);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const buffer = await response.arrayBuffer();
-
-    console.log(
-      "📦 MP4 récupéré :",
-      (buffer.byteLength / 1024 / 1024).toFixed(2),
-      "MB"
-    );
-
-    buffer.fileStart = 0;
-
-    const mp4box = MP4Box.createFile();
-
-    mp4box.onError = (error) => {
-      console.error("❌ Erreur MP4Box :", error);
-    };
-
-    mp4box.onReady = (info) => {
-      console.log("🎬 Pistes détectées :", info.tracks);
-
-      const subtitleTracks = info.tracks.filter(track => {
-        const codec = (track.codec || "").toLowerCase();
-
-        return codec.includes("tx3g");
-      });
-
-      if (!subtitleTracks.length) {
-        console.log("❌ Aucun sous-titre intégré trouvé.");
-        return;
-      }
-
-      console.log(
-        "💬 Sous-titres trouvés :",
-        subtitleTracks
-      );
-
-      subtitleTracks.forEach(track => {
-        console.log(
-          `💬 ${track.id} | ${track.language} | ${track.name} | ${track.codec}`
-        );
-      });
-    };
-
-    mp4box.appendBuffer(buffer);
-    mp4box.flush();
-
-  } catch (error) {
-    console.error(
-      "❌ Impossible de détecter les sous-titres :",
-      error
-    );
-  }
-}
-
 async function startHostPlayback(url) {
   isHost = true;
   setStatus("👑 Hôte (Envoi de la synchro)");
@@ -738,12 +669,8 @@ async function startHostPlayback(url) {
     });
 
     await waitPlayerReady();
-
-    await loadEmbeddedSubtitles(url);
-
     await player.play();
     await pushState();
-
   } catch (e) {
     console.error("Erreur de lecture :", e);
     setStatus("❌ Erreur de lecture");
