@@ -653,6 +653,58 @@ async function pushState() {
   });
 }
 
+async function loadEmbeddedSubtitles(url) {
+  console.log("🔎 Recherche des sous-titres intégrés...");
+
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+
+    buffer.fileStart = 0;
+
+    const mp4box = MP4Box.createFile();
+
+    mp4box.onError = (error) => {
+      console.error("❌ Erreur MP4Box :", error);
+    };
+
+    mp4box.onReady = (info) => {
+      console.log("🎬 Pistes MP4 :", info.tracks);
+
+      const subtitleTracks = info.tracks.filter(track =>
+        track.codec?.toLowerCase().includes("tx3g")
+      );
+
+      if (!subtitleTracks.length) {
+        console.log("ℹ️ Aucun sous-titre intégré trouvé.");
+        return;
+      }
+
+      console.log("💬 Sous-titres trouvés :", subtitleTracks);
+
+      subtitleTracks.forEach(track => {
+        console.log(
+          `💬 Piste ${track.id} : ${track.name} (${track.language})`
+        );
+      });
+    };
+
+    mp4box.appendBuffer(buffer);
+    mp4box.flush();
+
+  } catch (error) {
+    console.error(
+      "❌ Impossible de détecter les sous-titres :",
+      error
+    );
+  }
+}
+
 async function startHostPlayback(url) {
   isHost = true;
   setStatus("👑 Hôte (Envoi de la synchro)");
@@ -669,8 +721,12 @@ async function startHostPlayback(url) {
     });
 
     await waitPlayerReady();
+
+    await loadEmbeddedSubtitles(url);
+
     await player.play();
     await pushState();
+
   } catch (e) {
     console.error("Erreur de lecture :", e);
     setStatus("❌ Erreur de lecture");
