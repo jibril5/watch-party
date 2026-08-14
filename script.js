@@ -657,13 +657,25 @@ async function loadEmbeddedSubtitles(url) {
   console.log("🔎 Recherche des sous-titres intégrés...");
 
   try {
-    const response = await fetch(url);
+    // Utilise ton Worker pour éviter le problème CORS Dropbox
+    const proxyUrl =
+      WORKER_PROXY + encodeURIComponent(url);
+
+    console.log("📡 URL sous-titres via proxy :", proxyUrl);
+
+    const response = await fetch(proxyUrl);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
 
     const buffer = await response.arrayBuffer();
+
+    console.log(
+      "📦 MP4 récupéré :",
+      (buffer.byteLength / 1024 / 1024).toFixed(2),
+      "MB"
+    );
 
     buffer.fileStart = 0;
 
@@ -674,22 +686,27 @@ async function loadEmbeddedSubtitles(url) {
     };
 
     mp4box.onReady = (info) => {
-      console.log("🎬 Pistes MP4 :", info.tracks);
+      console.log("🎬 Pistes détectées :", info.tracks);
 
-      const subtitleTracks = info.tracks.filter(track =>
-        track.codec?.toLowerCase().includes("tx3g")
-      );
+      const subtitleTracks = info.tracks.filter(track => {
+        const codec = (track.codec || "").toLowerCase();
+
+        return codec.includes("tx3g");
+      });
 
       if (!subtitleTracks.length) {
-        console.log("ℹ️ Aucun sous-titre intégré trouvé.");
+        console.log("❌ Aucun sous-titre intégré trouvé.");
         return;
       }
 
-      console.log("💬 Sous-titres trouvés :", subtitleTracks);
+      console.log(
+        "💬 Sous-titres trouvés :",
+        subtitleTracks
+      );
 
       subtitleTracks.forEach(track => {
         console.log(
-          `💬 Piste ${track.id} : ${track.name} (${track.language})`
+          `💬 ${track.id} | ${track.language} | ${track.name} | ${track.codec}`
         );
       });
     };
