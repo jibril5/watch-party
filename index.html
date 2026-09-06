@@ -1,600 +1,118 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>✿ Watch Party Jibramani ✿</title>
 
-  <title>Watch Party</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
 
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+  />
 
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.6.1/video-js.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.6.1/video.min.js"></script>
 
-    body {
-      margin: 0;
-      background: #111;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
-
-    .container {
-      max-width: 1100px;
-      margin: 30px auto;
-      padding: 20px;
-    }
-
-    h1 {
-      margin-bottom: 10px;
-    }
-
-    #status {
-      margin: 15px 0;
-      padding: 12px;
-      background: #222;
-      border-radius: 8px;
-      color: #ccc;
-    }
-
-    video {
-      width: 100%;
-      max-height: 75vh;
-      background: black;
-      border-radius: 10px;
-    }
-
-    .sources {
-      margin-top: 20px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    button {
-      border: 0;
-      border-radius: 7px;
-      padding: 10px 16px;
-      background: #333;
-      color: white;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #555;
-    }
-
-    button.active {
-      background: #e50914;
-    }
-
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #181818;
-      padding: 15px;
-      border-radius: 8px;
-      color: #aaa;
-      overflow: auto;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
+  <div class="bg-circle bg1"></div>
+  <div class="bg-circle bg2"></div>
 
-<div class="container">
+  <div class="container">
+    <header class="hero">
+      <h1>
+        <span class="symbol">⊱</span>
+        Watch Party <span>Jibramani</span>
+        <span class="symbol">⊰</span>
+      </h1>
+    </header>
 
-  <h1 id="title">Chargement...</h1>
+    <section class="controls-card">
 
-  <div id="status">
-    Initialisation...
+      <div class="search-card">
+        <div class="input-wrapper">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input
+            id="searchInput"
+            type="text"
+            placeholder="Rechercher une série ou un film..."
+            autocomplete="off"
+          />
+        </div>
+
+        <div id="searchResults" class="dropdown"></div>
+      </div>
+
+      <div class="selectors">
+        <select id="seasonSelect">
+          <option value="">Choisir une saison</option>
+        </select>
+
+        <select id="episodeSelect">
+          <option value="">Choisir un épisode</option>
+        </select>
+
+        <select id="playerSelect">
+          <option value="">Choisir un lecteur</option>
+        </select>
+      </div>
+
+      <div class="input-wrapper manual-url-wrapper">
+        <i class="fa-solid fa-link"></i>
+        <input
+          id="videoUrl"
+          type="text"
+          placeholder="URL vidéo manuelle ou lien récupéré..."
+        />
+      </div>
+
+      <div class="buttons">
+        <button id="hostBtn" class="btn-primary">
+          <i class="fa-solid fa-play"></i>
+          Devenir Hôte
+        </button>
+
+        <button id="joinBtn" class="btn-secondary">
+          <i class="fa-solid fa-users"></i>
+          Rejoindre
+        </button>
+
+        <button id="syncBtn" class="btn-outline">
+          <i class="fa-solid fa-rotate"></i>
+          Resync
+        </button>
+      </div>
+    </section>
+
+    <div class="status-badge" id="status">
+      <span class="pulse"></span>
+      En attente d'une action...
+    </div>
+
+    <section class="video-section">
+      <div class="video-wrapper">
+        <video
+          id="video"
+          class="video-js vjs-big-play-centered"
+          controls
+          playsinline
+          webkit-playsinline
+          preload="auto"
+        >
+        </video>
+      </div>
+    </section>
   </div>
 
-  <video
-    id="video"
-    controls
-    playsinline
-    preload="metadata">
-  </video>
-
-  <div id="sources" class="sources"></div>
-
-  <h3>Informations</h3>
-  <pre id="debug"></pre>
-
-</div>
-
-<script>
-const API_WORKER =
-  "https://watch-party-proxy.dahmani-jibril.workers.dev";
-
-const HLS_WORKER =
-  "https://watch-party-proxy.dahmani-jibril.workers.dev";
-
-const params = new URLSearchParams(window.location.search);
-
-const tmdbId = params.get("tmdbId");
-const movieTitle = params.get("title") || "";
-const year = params.get("year") || "";
-const proof = params.get("proof");
-
-const titleElement = document.getElementById("title");
-const statusElement = document.getElementById("status");
-const video = document.getElementById("video");
-const sourcesElement = document.getElementById("sources");
-const debugElement = document.getElementById("debug");
-
-titleElement.textContent =
-  movieTitle || `Film ${tmdbId || ""}`;
-
-function status(text) {
-  statusElement.textContent = text;
-}
-
-function debug(data) {
-  try {
-    debugElement.textContent =
-      typeof data === "string"
-        ? data
-        : JSON.stringify(data, null, 2);
-  } catch {
-    debugElement.textContent = String(data);
-  }
-}
-
-function showError(message) {
-  status("❌ " + message);
-  console.error(message);
-}
-
-/*
- * Décodage Base64 UTF-8.
- */
-function decodeBase64(value) {
-  const binary = atob(value);
-
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return new TextDecoder("utf-8").decode(bytes);
-}
-
-/*
- * La réponse peut être du NDJSON :
- *
- * BASE64(JSON)
- * BASE64(JSON)
- * BASE64(JSON)
- *
- * ou parfois une seule grosse chaîne Base64.
- */
-function parseSourcesResponse(text) {
-
-  text = text.trim();
-
-  if (!text) {
-    return [];
-  }
-
-  const lines = text
-    .split(/\r?\n/)
-    .map(x => x.trim())
-    .filter(Boolean);
-
-  const result = [];
-
-  for (const line of lines) {
-
-    try {
-      /*
-       * Cas JSON direct.
-       */
-      if (
-        line.startsWith("{") ||
-        line.startsWith("[")
-      ) {
-        result.push(JSON.parse(line));
-        continue;
-      }
-
-      /*
-       * Cas Base64.
-       */
-      const decoded = decodeBase64(line);
-
-      /*
-       * Le Base64 peut lui-même contenir
-       * plusieurs lignes JSON.
-       */
-      const decodedLines = decoded
-        .split(/\r?\n/)
-        .map(x => x.trim())
-        .filter(Boolean);
-
-      for (const decodedLine of decodedLines) {
-        try {
-          result.push(JSON.parse(decodedLine));
-        } catch {
-          // ignore ligne invalide
-        }
-      }
-
-    } catch (e) {
-      console.warn("Impossible de décoder une ligne", e);
-    }
-  }
-
-  return result;
-}
-
-/*
- * Récupère tous les items présents dans
- * les différents groupes Paris/Lisbonne/etc.
- */
-function flattenItems(groups) {
-
-  const items = [];
-
-  for (const group of groups) {
-
-    if (Array.isArray(group)) {
-      items.push(...group);
-      continue;
-    }
-
-    if (Array.isArray(group.items)) {
-      items.push(...group.items);
-    }
-  }
-
-  return items;
-}
-
-/*
- * Classement des sources.
- *
- * Priorité :
- * 1. Vidzy
- * 2. HLS
- * 3. HD
- * 4. VOSTFR
- * 5. proxifié
- */
-function sourceScore(source) {
-
-  let score = 0;
-
-  if (source.service === "vidzy") score += 1000;
-
-  if (source.type === "hls") score += 300;
-
-  if (source.quality === "hd") score += 100;
-
-  if (source.language === "vostfr") score += 50;
-
-  if (source.proxied === true) score += 25;
-
-  return score;
-}
-
-/*
- * Transforme l'URL source en URL HLS
- * utilisable par ton Worker.
- */
-function makeHlsUrl(sourceUrl) {
-
-  return HLS_WORKER +
-    "/?url=" +
-    encodeURIComponent(sourceUrl);
-}
-
-/*
- * Lecture HLS.
- */
-let hls = null;
-
-function playSource(source) {
-
-  if (!source || !source.url) {
-    showError("Source invalide.");
-    return;
-  }
-
-  const sourceUrl = source.url;
-
-  status(
-    `▶ Lecture : ${source.service} / ` +
-    `${source.language || "?"} / ` +
-    `${source.quality || "?"}`
-  );
-
-  /*
-   * Si c'est déjà un HLS.
-   */
-  const isHls =
-    source.type === "hls" ||
-    /\.m3u8(\?|$)/i.test(sourceUrl);
-
-  if (!isHls) {
-
-    /*
-     * Une source embed n'est pas directement
-     * lisible par hls.js.
-     */
-    showError(
-      "Cette source est un embed et non une URL HLS directe."
-    );
-
-    debug(source);
-
-    return;
-  }
-
-  /*
-   * Toutes les requêtes HLS passent par ton Worker.
-   */
-  const proxiedUrl = makeHlsUrl(sourceUrl);
-
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-
-  if (Hls.isSupported()) {
-
-    hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: false,
-
-      xhrSetup: function(xhr) {
-        xhr.withCredentials = false;
-      }
-    });
-
-    hls.on(Hls.Events.ERROR, function(event, data) {
-
-      console.error("HLS ERROR", data);
-
-      if (data.fatal) {
-
-        switch (data.type) {
-
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            status(
-              "❌ Erreur réseau HLS. " +
-              "Vérifie le Worker ou l'URL source."
-            );
-
-            break;
-
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            status(
-              "⚠️ Erreur média. Tentative de récupération..."
-            );
-
-            hls.recoverMediaError();
-            break;
-
-          default:
-            status("❌ Erreur HLS fatale.");
-            hls.destroy();
-            break;
-        }
-      }
-    });
-
-    hls.loadSource(proxiedUrl);
-
-    hls.attachMedia(video);
-
-    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-
-      status(
-        `✅ Source chargée : ${source.service} ` +
-        `${source.language || ""} ` +
-        `${source.quality || ""}`
-      );
-
-      video.play().catch(() => {});
-    });
-
-  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-
-    /*
-     * Safari / navigateurs avec HLS natif.
-     */
-    video.src = proxiedUrl;
-
-    video.addEventListener(
-      "loadedmetadata",
-      function() {
-        video.play().catch(() => {});
-      },
-      { once: true }
-    );
-
-  } else {
-
-    showError(
-      "Ce navigateur ne supporte pas HLS."
-    );
-  }
-
-  debug({
-    selectedSource: source,
-    hlsUrl: proxiedUrl
-  });
-}
-
-/*
- * Affiche les boutons des sources.
- */
-function renderSources(sources) {
-
-  sourcesElement.innerHTML = "";
-
-  sources.forEach((source, index) => {
-
-    const button = document.createElement("button");
-
-    button.textContent =
-      `${source.service || "?"} ` +
-      `${source.language || ""} ` +
-      `${source.quality || ""}`;
-
-    button.addEventListener("click", function() {
-
-      document
-        .querySelectorAll(".sources button")
-        .forEach(b => b.classList.remove("active"));
-
-      button.classList.add("active");
-
-      playSource(source);
-    });
-
-    sourcesElement.appendChild(button);
-
-    /*
-     * Première source automatiquement.
-     */
-    if (index === 0) {
-      button.classList.add("active");
-    }
-  });
-}
-
-/*
- * Appel de ton Worker.
- */
-async function loadSources() {
-
-  if (!tmdbId) {
-    showError(
-      "Paramètre tmdbId manquant dans l'URL."
-    );
-    return;
-  }
-
-  if (!proof) {
-    showError(
-      "Paramètre proof manquant dans l'URL."
-    );
-    return;
-  }
-
-  status("🔎 Récupération des sources...");
-
-  const apiUrl =
-    API_WORKER +
-    "/sources" +
-    "?tmdbId=" +
-    encodeURIComponent(tmdbId) +
-    "&type=movie" +
-    "&title=" +
-    encodeURIComponent(movieTitle) +
-    "&releaseYear=" +
-    encodeURIComponent(year) +
-    "&proof=" +
-    encodeURIComponent(proof);
-
-  try {
-
-    const response = await fetch(apiUrl, {
-      method: "GET",
-      headers: {
-        "Accept": "application/x-ndjson"
-      }
-    });
-
-    if (!response.ok) {
-
-      const errorText =
-        await response.text();
-
-      throw new Error(
-        `HTTP ${response.status}: ${errorText}`
-      );
-    }
-
-    const text =
-      await response.text();
-
-    debug({
-      apiResponseLength: text.length
-    });
-
-    const groups =
-      parseSourcesResponse(text);
-
-    const allSources =
-      flattenItems(groups);
-
-    /*
-     * On garde uniquement les sources utilisables
-     * par hls.js.
-     */
-    const hlsSources =
-      allSources.filter(source => {
-
-        if (!source || !source.url) {
-          return false;
-        }
-
-        if (source.service !== "vidzy") {
-          return false;
-        }
-
-        return (
-          source.type === "hls" ||
-          /\.m3u8(\?|$)/i.test(source.url)
-        );
-      });
-
-    /*
-     * Classement.
-     */
-    hlsSources.sort(
-      (a, b) =>
-        sourceScore(b) - sourceScore(a)
-    );
-
-    if (!hlsSources.length) {
-
-      throw new Error(
-        "Aucune source Vidzy HLS trouvée."
-      );
-    }
-
-    status(
-      `✅ ${hlsSources.length} source(s) Vidzy trouvée(s).`
-    );
-
-    renderSources(hlsSources);
-
-    /*
-     * Lecture automatique de la meilleure.
-     */
-    playSource(hlsSources[0]);
-
-  } catch (error) {
-
-    console.error(error);
-
-    showError(error.message);
-
-    debug({
-      error: error.message
-    });
-  }
-}
-
-loadSources();
-</script>
-
+  <script type="module" src="script.js"></script>
 </body>
 </html>
