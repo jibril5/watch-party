@@ -41,6 +41,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const roomRef = ref(db, "room");
 
+
 // =========================
 // SYNCHRONISATION HORLOGE
 // =========================
@@ -135,6 +136,7 @@ let forceMutedForAutoplay = false;
 let selectedShowId = null;
 let selectedShowName = "";
 let selectedMediaType = "tv";
+
 let selectedMovieData = null;
 let selectedSeasons = [];
 
@@ -146,12 +148,8 @@ let currentVideoUrl = "";
 
 
 // =========================
-// CACHE SOURCES
+// CACHE DES SOURCES
 // =========================
-
-// Cache très léger en mémoire.
-// Évite de refaire l'appel API lorsqu'on
-// revient sur le même film / épisode.
 
 const sourceCache = new Map();
 
@@ -189,10 +187,8 @@ searchInput.addEventListener("input", (e) => {
       e.target.value.trim();
 
     if (query.length < 3) {
-
       resultsDiv.innerHTML = "";
       setDropdownVisible(false);
-
       return;
     }
 
@@ -205,11 +201,12 @@ searchInput.addEventListener("input", (e) => {
         `&language=fr-FR` +
         `&include_adult=false`;
 
-      const res =
-        await fetch(url);
+      const res = await fetch(url);
 
       if (!res.ok) {
-        throw new Error(res.status);
+        throw new Error(
+          `TMDB HTTP ${res.status}`
+        );
       }
 
       const data =
@@ -239,7 +236,7 @@ searchInput.addEventListener("input", (e) => {
 
 
 // =========================
-// AFFICHAGE RESULTATS
+// AFFICHER RESULTATS
 // =========================
 
 function displayResults(results) {
@@ -260,7 +257,6 @@ function displayResults(results) {
       </div>`;
 
     setDropdownVisible(true);
-
     return;
   }
 
@@ -355,17 +351,15 @@ async function selectMedia(item) {
 
   resetPlayers();
 
-  // =====================
+
+  // =========================
   // FILM
-  // =====================
+  // =========================
 
   if (selectedMediaType === "movie") {
 
-    seasonSelect.style.display =
-      "none";
-
-    episodeSelect.style.display =
-      "none";
+    seasonSelect.style.display = "none";
+    episodeSelect.style.display = "none";
 
     setStatus(
       `Chargement du film ${selectedShowName}...`
@@ -382,7 +376,9 @@ async function selectMedia(item) {
         await fetch(url);
 
       if (!res.ok) {
-        throw new Error(res.status);
+        throw new Error(
+          `TMDB HTTP ${res.status}`
+        );
       }
 
       selectedMovieData =
@@ -392,8 +388,7 @@ async function selectMedia(item) {
         `Film sélectionné : ${selectedShowName}`
       );
 
-      // 🔥 Prépare immédiatement les sources
-      // sans attendre le bouton Hôte.
+      // Charge les sources immédiatement.
       await fetchPlayersFromSelectedMedia();
 
     } catch (err) {
@@ -412,15 +407,12 @@ async function selectMedia(item) {
   }
 
 
-  // =====================
+  // =========================
   // SERIE
-  // =====================
+  // =========================
 
-  seasonSelect.style.display =
-    "block";
-
-  episodeSelect.style.display =
-    "block";
+  seasonSelect.style.display = "block";
+  episodeSelect.style.display = "block";
 
   setStatus(
     `Chargement de ${selectedShowName}...`
@@ -437,7 +429,9 @@ async function selectMedia(item) {
       await fetch(url);
 
     if (!res.ok) {
-      throw new Error(res.status);
+      throw new Error(
+        `TMDB HTTP ${res.status}`
+      );
     }
 
     const data =
@@ -508,6 +502,9 @@ function populateSeasons(seasons) {
   seasonSelect.onchange =
     loadEpisodes;
 
+  // On garde le comportement
+  // de ton ancien script :
+  // première saison automatiquement.
   if (seasons.length > 0) {
 
     seasonSelect.value =
@@ -551,7 +548,9 @@ async function loadEpisodes() {
       await fetch(url);
 
     if (!res.ok) {
-      throw new Error(res.status);
+      throw new Error(
+        `TMDB HTTP ${res.status}`
+      );
     }
 
     const data =
@@ -588,11 +587,12 @@ async function loadEpisodes() {
       );
     });
 
-    // 🔥 Charge automatiquement le premier épisode
+    // Premier épisode sélectionné
     episodeSelect.value =
       data.episodes[0].episode_number;
 
-    await loadEpisodeSources();
+    // Charge immédiatement ses sources.
+    await fetchPlayersFromSelectedMedia();
 
   } catch (err) {
 
@@ -615,27 +615,13 @@ async function loadEpisodes() {
 
 episodeSelect.addEventListener(
   "change",
-  loadEpisodeSources
+  async () => {
+
+    resetPlayers();
+
+    await fetchPlayersFromSelectedMedia();
+  }
 );
-
-
-async function loadEpisodeSources() {
-
-  if (
-    selectedMediaType !== "tv"
-  ) {
-    return;
-  }
-
-  if (
-    !seasonSelect.value ||
-    !episodeSelect.value
-  ) {
-    return;
-  }
-
-  await fetchPlayersFromSelectedMedia();
-}
 
 
 // =========================
@@ -647,96 +633,122 @@ function resetPlayers() {
   availablePlayers = [];
   currentVideoUrl = "";
 
-  if (playerSelect) {
-
-    playerSelect.innerHTML =
-      `<option value="">
-        Choisir un lecteur
-      </option>`;
-  }
+  playerSelect.innerHTML =
+    `<option value="">
+      Choisir un lecteur
+    </option>`;
 }
 
 
 // =========================
-// EXTRACTION DES LECTEURS
+// PARSE SOURCES
 // =========================
 
 function extractPlayers(text) {
 
   const players = [];
 
-  const blocks =
+  /*
+   * Ton ancien endpoint renvoie du NDJSON.
+   *
+   * Chaque ligne peut être :
+   * {"id":"...","provider":"...","items":[...]}
+   */
+
+  const lines =
     text
-      .split("\n")
+      .split(/\r?\n/)
       .map(line => line.trim())
-      .filter(
-        line =>
-          line.startsWith("{") &&
-          line.endsWith("}")
-      );
+      .filter(Boolean);
 
-  for (const block of blocks) {
+  for (const line of lines) {
 
+    let providerData = null;
+
+
+    // JSON normal
     try {
 
-      const providerData =
-        JSON.parse(block);
+      providerData =
+        JSON.parse(line);
 
-      if (
-        !Array.isArray(
-          providerData.items
-        )
-      ) {
-        continue;
-      }
+    } catch {
 
-      providerData.items.forEach(item => {
-
-        if (!item.url)
-          return;
-
-        players.push({
-
-          id:
-            providerData.id || "",
-
-          provider:
-            item.provider ||
-            providerData.provider ||
-            providerData.id ||
-            "Inconnu",
-
-          service:
-            item.service ||
-            "inconnu",
-
-          quality:
-            item.quality ||
-            "unknown",
-
-          language:
-            item.language ||
-            "unknown",
-
-          type:
-            item.type ||
-            "unknown",
-
-          proxied:
-            item.proxied === true,
-
-          url:
-            item.url
-        });
-      });
-
-    } catch (err) {
-
-      console.warn(
-        "JSON ignoré :",
-        err
-      );
+      // Rien
     }
+
+
+    // Si la ligne est encodée Base64,
+    // on tente aussi le décodage.
+    if (!providerData) {
+
+      try {
+
+        const decoded =
+          atob(line);
+
+        providerData =
+          JSON.parse(decoded);
+
+      } catch {
+
+        // Ligne ignorée
+      }
+    }
+
+
+    if (!providerData)
+      continue;
+
+
+    if (
+      !Array.isArray(
+        providerData.items
+      )
+    ) {
+      continue;
+    }
+
+
+    providerData.items.forEach(item => {
+
+      if (!item.url)
+        return;
+
+      players.push({
+
+        id:
+          providerData.id || "",
+
+        provider:
+          item.provider ||
+          providerData.provider ||
+          providerData.id ||
+          "Inconnu",
+
+        service:
+          item.service ||
+          "inconnu",
+
+        quality:
+          item.quality ||
+          "unknown",
+
+        language:
+          item.language ||
+          "unknown",
+
+        type:
+          item.type ||
+          "unknown",
+
+        proxied:
+          item.proxied === true,
+
+        url:
+          item.url
+      });
+    });
   }
 
   return players;
@@ -744,7 +756,7 @@ function extractPlayers(text) {
 
 
 // =========================
-// TRI DES LECTEURS
+// TRI DES SOURCES
 // =========================
 
 function sortPlayers(players) {
@@ -770,12 +782,14 @@ function sortPlayers(players) {
         String(p.type)
           .toLowerCase();
 
-      // ⭐ Vidzy en priorité
+
+      // Vidzy prioritaire
       if (
         provider.includes("vidzy")
       ) {
         score += 10000;
       }
+
 
       // HLS
       if (
@@ -786,16 +800,19 @@ function sortPlayers(players) {
         score += 3000;
       }
 
-      // HD
+
+      // Qualité
       if (
         quality.includes("1080")
       ) {
         score += 1500;
+
       } else if (
         quality.includes("hd")
       ) {
         score += 1000;
       }
+
 
       // VOSTFR
       if (
@@ -804,6 +821,7 @@ function sortPlayers(players) {
         score += 500;
       }
 
+
       // VF
       if (
         language === "vf"
@@ -811,10 +829,12 @@ function sortPlayers(players) {
         score += 400;
       }
 
-      // Déjà proxifié
+
+      // Source déjà proxifiée
       if (p.proxied) {
         score += 100;
       }
+
 
       return {
         ...p,
@@ -841,6 +861,7 @@ function populatePlayers(players) {
       Choisir un lecteur
     </option>`;
 
+
   if (!players.length) {
 
     playerSelect.innerHTML =
@@ -850,6 +871,7 @@ function populatePlayers(players) {
 
     return;
   }
+
 
   players.forEach(
     (p, index) => {
@@ -873,7 +895,8 @@ function populatePlayers(players) {
     }
   );
 
-  // ⭐ Premier = meilleur score
+
+  // Sélection automatique du meilleur.
   playerSelect.value = "0";
 
   const best =
@@ -892,7 +915,101 @@ function populatePlayers(players) {
 
 
 // =========================
-// RECUPERATION SOURCES
+// CONSTRUCTION API SOURCES
+// =========================
+
+function buildSourceApiUrl() {
+
+  // =========================
+  // FILM
+  // =========================
+
+  if (
+    selectedMediaType === "movie"
+  ) {
+
+    if (!selectedMovieData) {
+
+      return null;
+    }
+
+    const releaseYear =
+      selectedMovieData.release_date
+        ? selectedMovieData
+            .release_date
+            .split("-")[0]
+        : "";
+
+
+    return (
+      `https://afd926.mom/api/sources` +
+
+      `?tmdbId=${selectedShowId}` +
+
+      `&type=movie` +
+
+      `&title=${
+        encodeURIComponent(
+          selectedMovieData.title ||
+          selectedShowName
+        )
+      }` +
+
+      `&releaseYear=${
+        encodeURIComponent(
+          releaseYear
+        )
+      }`
+    );
+  }
+
+
+  // =========================
+  // SERIE
+  // =========================
+
+  const season =
+    seasonSelect.value;
+
+  const episode =
+    episodeSelect.value;
+
+
+  if (!season || !episode) {
+    return null;
+  }
+
+
+  return (
+    `https://afd926.mom/api/sources` +
+
+    `?tmdbId=${selectedShowId}` +
+
+    `&type=tv` +
+
+    `&title=${
+      encodeURIComponent(
+        selectedShowName
+      )
+    }` +
+
+    `&season=${
+      encodeURIComponent(
+        season
+      )
+    }` +
+
+    `&episode=${
+      encodeURIComponent(
+        episode
+      )
+    }`
+  );
+}
+
+
+// =========================
+// RECUPERATION DES SOURCES
 // =========================
 
 async function fetchPlayersFromSelectedMedia() {
@@ -900,19 +1017,18 @@ async function fetchPlayersFromSelectedMedia() {
   const apiUrl =
     buildSourceApiUrl();
 
-  if (!apiUrl)
+
+  if (!apiUrl) {
     return null;
+  }
 
 
-  // =====================
+  // =========================
   // CACHE
-  // =====================
-
-  const cacheKey =
-    apiUrl;
+  // =========================
 
   if (
-    sourceCache.has(cacheKey)
+    sourceCache.has(apiUrl)
   ) {
 
     console.log(
@@ -920,7 +1036,7 @@ async function fetchPlayersFromSelectedMedia() {
     );
 
     availablePlayers =
-      sourceCache.get(cacheKey);
+      sourceCache.get(apiUrl);
 
     populatePlayers(
       availablePlayers
@@ -930,9 +1046,9 @@ async function fetchPlayersFromSelectedMedia() {
   }
 
 
-  // =====================
-  // ANNULATION REQUETE
-  // =====================
+  // =========================
+  // ANNULATION ANCIENNE REQUETE
+  // =========================
 
   if (sourceAbortController) {
     sourceAbortController.abort();
@@ -954,32 +1070,48 @@ async function fetchPlayersFromSelectedMedia() {
       apiUrl
     );
 
+
+    /*
+     * Le navigateur appelle UNIQUEMENT le Worker.
+     *
+     * Le Worker appelle afd926.mom
+     * et ajoute le x-nabi-proof.
+     */
+
     const proxyUrl =
       WORKER_PROXY +
-      encodeURIComponent(apiUrl);
+      encodeURIComponent(
+        apiUrl
+      );
+
 
     console.log(
-      "WORKER :",
+      "WORKER URL :",
       proxyUrl
     );
 
 
     const res =
-      await fetch(proxyUrl, {
-        signal:
-          sourceAbortController.signal
-      });
+      await fetch(
+        proxyUrl,
+        {
+          signal:
+            sourceAbortController.signal
+        }
+      );
+
 
     if (!res.ok) {
 
       throw new Error(
-        `Erreur proxy HTTP ${res.status}`
+        `Worker HTTP ${res.status}`
       );
     }
 
 
     const text =
       await res.text();
+
 
     console.log(
       "SOURCE RESPONSE :",
@@ -991,7 +1123,9 @@ async function fetchPlayersFromSelectedMedia() {
       extractPlayers(text);
 
 
-    if (!availablePlayers.length) {
+    if (
+      !availablePlayers.length
+    ) {
 
       setStatus(
         "Aucun lecteur trouvé."
@@ -1001,16 +1135,16 @@ async function fetchPlayersFromSelectedMedia() {
     }
 
 
-    // ⭐ TRI
+    // Meilleurs lecteurs en premier
     availablePlayers =
       sortPlayers(
         availablePlayers
       );
 
 
-    // CACHE
+    // Cache
     sourceCache.set(
-      cacheKey,
+      apiUrl,
       availablePlayers
     );
 
@@ -1027,6 +1161,7 @@ async function fetchPlayersFromSelectedMedia() {
     if (
       err.name === "AbortError"
     ) {
+
       console.log(
         "Ancienne requête annulée."
       );
@@ -1034,10 +1169,12 @@ async function fetchPlayersFromSelectedMedia() {
       return null;
     }
 
+
     console.error(
-      "Erreur récupération lecteurs :",
+      "Erreur récupération sources :",
       err
     );
+
 
     setStatus(
       "Erreur récupération lecteurs."
@@ -1049,120 +1186,7 @@ async function fetchPlayersFromSelectedMedia() {
 
 
 // =========================
-// URL API SOURCES
-// =========================
-
-function buildSourceApiUrl() {
-
-  /*
-   * IMPORTANT :
-   * On conserve ton endpoint qui fonctionnait.
-   *
-   * Le Worker s'occupe maintenant du
-   * x-nabi-proof.
-   */
-
-  if (
-    selectedMediaType === "movie"
-  ) {
-
-    if (!selectedMovieData) {
-
-      alert(
-        "Les infos du film ne sont pas encore chargées."
-      );
-
-      return null;
-    }
-
-    const releaseYear =
-      selectedMovieData.release_date
-        ? selectedMovieData
-            .release_date
-            .split("-")[0]
-        : "";
-
-    return (
-      `https://afterdark06.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
-
-      `?tmdbId=${selectedShowId}` +
-
-      `&type=movie` +
-
-      `&imdbId=${
-        encodeURIComponent(
-          selectedMovieData.imdb_id || ""
-        )
-      }` +
-
-      `&title=${
-        encodeURIComponent(
-          selectedMovieData.title ||
-          selectedShowName
-        )
-      }` +
-
-      `&releaseYear=${
-        encodeURIComponent(
-          releaseYear
-        )
-      }` +
-
-      `&originalTitle=${
-        encodeURIComponent(
-          selectedMovieData.original_title ||
-          selectedShowName
-        )
-      }`
-    );
-  }
-
-
-  // =====================
-  // SERIE
-  // =====================
-
-  const season =
-    seasonSelect.value;
-
-  const episode =
-    episodeSelect.value;
-
-  if (!season || !episode) {
-
-    alert(
-      "Choisis saison + épisode !"
-    );
-
-    return null;
-  }
-
-  return (
-    `https://afterdark06.mom/api/staging-20260420-yuna-hipaa-86nnorn0/sources` +
-
-    `?tmdbId=${selectedShowId}` +
-
-    `&type=tv` +
-
-    `&title=${
-      encodeURIComponent(
-        selectedShowName
-      )
-    }` +
-
-    `&season=${
-      encodeURIComponent(season)
-    }` +
-
-    `&episode=${
-      encodeURIComponent(episode)
-    }`
-  );
-}
-
-
-// =========================
-// LECTEUR
+// CHANGEMENT LECTEUR
 // =========================
 
 playerSelect.addEventListener(
@@ -1174,6 +1198,7 @@ playerSelect.addEventListener(
         playerSelect.value
       );
 
+
     if (
       Number.isNaN(index) ||
       !availablePlayers[index]
@@ -1181,8 +1206,10 @@ playerSelect.addEventListener(
       return;
     }
 
+
     const selected =
       availablePlayers[index];
+
 
     currentVideoUrl =
       selected.url;
@@ -1190,12 +1217,12 @@ playerSelect.addEventListener(
     videoUrl.value =
       selected.url;
 
+
     setStatus(
       `Lecteur sélectionné : ${selected.provider}`
     );
 
-    // Si on est déjà hôte,
-    // changement immédiat de source.
+
     if (isHost) {
 
       await startHostPlayback(
@@ -1210,10 +1237,12 @@ playerSelect.addEventListener(
 // TYPE VIDEO
 // =========================
 
-async function guessType(url) {
+function guessType(url) {
 
   const lower =
-    url.toLowerCase();
+    String(url)
+      .toLowerCase();
+
 
   if (
     lower.includes(".m3u8") ||
@@ -1222,11 +1251,13 @@ async function guessType(url) {
     return "application/x-mpegURL";
   }
 
+
   if (
     lower.includes(".mpd")
   ) {
     return "application/dash+xml";
   }
+
 
   if (
     lower.includes(".mp4")
@@ -1234,18 +1265,22 @@ async function guessType(url) {
     return "video/mp4";
   }
 
+
   if (
     lower.includes(".webm")
   ) {
     return "video/webm";
   }
 
+
+  // Tes sources actuelles sont
+  // principalement HLS.
   return "application/x-mpegURL";
 }
 
 
 // =========================
-// ATTENTE VIDEO
+// ATTENTE PLAYER
 // =========================
 
 function waitPlayerReady() {
@@ -1255,9 +1290,11 @@ function waitPlayerReady() {
     if (
       player.readyState() >= 2
     ) {
+
       resolve();
       return;
     }
+
 
     player.one(
       "loadeddata",
@@ -1268,7 +1305,7 @@ function waitPlayerReady() {
 
 
 // =========================
-// PUSH FIREBASE
+// FIREBASE HOST
 // =========================
 
 async function pushState() {
@@ -1280,6 +1317,7 @@ async function pushState() {
   ) {
     return;
   }
+
 
   await set(
     roomRef,
@@ -1301,39 +1339,86 @@ async function pushState() {
 
 
 // =========================
-// LECTURE HOST
+// HOST PLAYBACK
 // =========================
 
 async function startHostPlayback(url) {
 
   isHost = true;
-
   syncing = true;
+
 
   setStatus(
     "👑 Hôte (Envoi de la synchro)"
   );
 
+
   try {
 
     const type =
-      await guessType(url);
+      guessType(url);
+
+
+    console.log(
+      "🎥 Type vidéo :",
+      type
+    );
+
+
+    /*
+     * IMPORTANT :
+     *
+     * Si la source est une URL externe,
+     * on la passe par ton Worker.
+     *
+     * Ainsi les segments HLS sont eux aussi
+     * récupérés par le Worker.
+     */
+
+    let playbackUrl = url;
+
+
+    if (
+      !url.startsWith(
+        WORKER_BASE
+      )
+    ) {
+
+      playbackUrl =
+        WORKER_PROXY +
+        encodeURIComponent(url);
+    }
+
+
+    console.log(
+      "▶️ Playback URL :",
+      playbackUrl
+    );
+
 
     player.src({
-      src: url,
+      src:
+        playbackUrl,
+
       type
     });
 
+
     await waitPlayerReady();
 
+
     try {
+
       await player.play();
+
     } catch (e) {
+
       console.warn(
         "Autoplay bloqué :",
         e
       );
     }
+
 
     await pushState();
 
@@ -1343,6 +1428,7 @@ async function startHostPlayback(url) {
       "Erreur lecture :",
       e
     );
+
 
     setStatus(
       "❌ Erreur de lecture"
@@ -1356,112 +1442,129 @@ async function startHostPlayback(url) {
 
 
 // =========================
-// HOST
+// BOUTON HOST
 // =========================
 
-hostBtn.onclick = async () => {
+hostBtn.onclick =
+  async () => {
 
-  try {
+    try {
 
-    let url =
-      currentVideoUrl;
+      let url =
+        currentVideoUrl;
 
-    // Normalement déjà chargé grâce
-    // au préchargement.
-    if (!url) {
 
-      url =
-        await fetchPlayersFromSelectedMedia();
-    }
+      /*
+       * Les sources sont normalement
+       * déjà chargées après la sélection.
+       */
 
-    if (!url) {
+      if (!url) {
 
-      url =
-        videoUrl.value.trim();
-    }
+        url =
+          await fetchPlayersFromSelectedMedia();
+      }
 
-    if (!url) {
 
-      alert(
-        "Sélectionne un film/série ou entre une URL vidéo."
+      if (!url) {
+
+        url =
+          videoUrl.value.trim();
+      }
+
+
+      if (!url) {
+
+        alert(
+          "Sélectionne un film/série ou entre une URL vidéo."
+        );
+
+        return;
+      }
+
+
+      await startHostPlayback(
+        url
       );
 
-      return;
+    } catch (e) {
+
+      console.error(
+        "Erreur chargement vidéo :",
+        e
+      );
+
+
+      setStatus(
+        "Erreur chargement vidéo."
+      );
     }
-
-    await startHostPlayback(url);
-
-  } catch (e) {
-
-    console.error(
-      "Erreur chargement vidéo :",
-      e
-    );
-
-    setStatus(
-      "Erreur chargement vidéo."
-    );
-  }
-};
+  };
 
 
 // =========================
 // JOIN
 // =========================
 
-joinBtn.onclick = async () => {
+joinBtn.onclick =
+  async () => {
 
-  isHost = false;
+    isHost = false;
 
-  setStatus(
-    "👥 Spectateur (Synchronisé)"
-  );
 
-  try {
-
-    player.muted(true);
-
-    forceMutedForAutoplay = true;
-
-    await player.play();
-
-    player.pause();
-
-  } catch (e) {
-
-    console.warn(
-      "Autoplay initial bloqué",
-      e
+    setStatus(
+      "👥 Spectateur (Synchronisé)"
     );
-  }
 
-  await forceSync();
-};
+
+    try {
+
+      player.muted(true);
+
+      forceMutedForAutoplay =
+        true;
+
+      await player.play();
+
+      player.pause();
+
+    } catch (e) {
+
+      console.warn(
+        "Autoplay initial bloqué",
+        e
+      );
+    }
+
+
+    await forceSync();
+  };
 
 
 // =========================
 // RESYNC
 // =========================
 
-syncBtn.onclick = async () => {
+syncBtn.onclick =
+  async () => {
 
-  if (isHost) {
+    if (isHost) {
 
-    await pushState();
+      await pushState();
 
-    setStatus(
-      "👑 Hôte (Sync forcée envoyée)"
-    );
+      setStatus(
+        "👑 Hôte (Sync forcée envoyée)"
+      );
 
-  } else {
+    } else {
 
-    await forceSync();
+      await forceSync();
 
-    setStatus(
-      "👥 Spectateur (Resync manuelle)"
-    );
-  }
-};
+      setStatus(
+        "👥 Spectateur (Resync manuelle)"
+      );
+    }
+  };
 
 
 // =========================
@@ -1472,6 +1575,7 @@ async function applySync(data) {
 
   syncing = true;
 
+
   try {
 
     if (
@@ -1479,12 +1583,16 @@ async function applySync(data) {
     ) {
 
       const type =
-        await guessType(data.url);
+        guessType(data.url);
+
 
       player.src({
-        src: data.url,
+        src:
+          data.url,
+
         type
       });
+
 
       await waitPlayerReady();
     }
@@ -1517,6 +1625,7 @@ async function applySync(data) {
 
       player.pause();
 
+
       player.currentTime(
         target
       );
@@ -1527,6 +1636,7 @@ async function applySync(data) {
         try {
 
           await player.play();
+
 
           if (
             forceMutedForAutoplay
@@ -1585,6 +1695,7 @@ onValue(
     const data =
       snap.val();
 
+
     if (
       !data ||
       isHost ||
@@ -1593,22 +1704,26 @@ onValue(
       return;
     }
 
+
     const latency =
       (
         getNetworkTime() -
         data.updatedAt
       ) / 1000;
 
+
     const target =
       data.paused
         ? data.time
         : data.time + latency;
+
 
     const drift =
       Math.abs(
         player.currentTime() -
         target
       );
+
 
     if (
       player.src() !== data.url ||
@@ -1633,6 +1748,7 @@ async function forceSync() {
 
   const data =
     snap.val();
+
 
   if (data) {
     await applySync(data);
@@ -1670,6 +1786,7 @@ setInterval(() => {
     isHost &&
     !player.paused()
   ) {
+
     pushState();
   }
 
@@ -1677,7 +1794,7 @@ setInterval(() => {
 
 
 // =========================
-// FERMETURE DROPDOWN
+// DROPDOWN
 // =========================
 
 document.addEventListener(
@@ -1688,16 +1805,13 @@ document.addEventListener(
       searchInput.contains(e.target) ||
       resultsDiv.contains(e.target);
 
+
     if (!inside) {
       setDropdownVisible(false);
     }
   }
 );
 
-
-// =========================
-// REOUVERTURE
-// =========================
 
 searchInput.addEventListener(
   "focus",
@@ -1706,6 +1820,7 @@ searchInput.addEventListener(
     if (
       resultsDiv.innerHTML.trim() !== ""
     ) {
+
       setDropdownVisible(true);
     }
   }
@@ -1713,15 +1828,30 @@ searchInput.addEventListener(
 
 
 // =========================
-// SECURITE HTML
+// ESCAPE HTML
 // =========================
 
 function escapeHtml(value) {
 
   return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll(
+      "&",
+      "&amp;"
+    )
+    .replaceAll(
+      "<",
+      "&lt;"
+    )
+    .replaceAll(
+      ">",
+      "&gt;"
+    )
+    .replaceAll(
+      '"',
+      "&quot;"
+    )
+    .replaceAll(
+      "'",
+      "&#039;"
+    );
 }
