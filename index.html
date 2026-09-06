@@ -1,286 +1,599 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Watch Party - Lecteur HLS</title>
+  <title>Watch Party</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
-    <style>
-        * {
-            box-sizing: border-box;
-        }
+  <style>
+    * {
+      box-sizing: border-box;
+    }
 
-        body {
-            margin: 0;
-            background: #111;
-            color: white;
-            font-family: Arial, sans-serif;
-        }
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
 
-        .container {
-            width: 95%;
-            max-width: 1100px;
-            margin: 40px auto;
-        }
+    .container {
+      max-width: 1100px;
+      margin: 30px auto;
+      padding: 20px;
+    }
 
-        h1 {
-            margin-bottom: 20px;
-        }
+    h1 {
+      margin-bottom: 10px;
+    }
 
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
+    #status {
+      margin: 15px 0;
+      padding: 12px;
+      background: #222;
+      border-radius: 8px;
+      color: #ccc;
+    }
 
-        #url {
-            flex: 1;
-            padding: 14px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            background: #222;
-            color: white;
-            font-size: 14px;
-        }
+    video {
+      width: 100%;
+      max-height: 75vh;
+      background: black;
+      border-radius: 10px;
+    }
 
-        button {
-            padding: 14px 22px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-        }
+    .sources {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
 
-        #status {
-            margin-bottom: 15px;
-            color: #aaa;
-        }
+    button {
+      border: 0;
+      border-radius: 7px;
+      padding: 10px 16px;
+      background: #333;
+      color: white;
+      cursor: pointer;
+    }
 
-        #video {
-            width: 100%;
-            background: black;
-            border-radius: 8px;
-            display: block;
-        }
+    button:hover {
+      background: #555;
+    }
 
-        @media (max-width: 700px) {
-            .controls {
-                flex-direction: column;
-            }
+    button.active {
+      background: #e50914;
+    }
 
-            button {
-                width: 100%;
-            }
-        }
-    </style>
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #181818;
+      padding: 15px;
+      border-radius: 8px;
+      color: #aaa;
+      overflow: auto;
+    }
+  </style>
 </head>
 
 <body>
 
 <div class="container">
 
-    <h1>🎬 Watch Party</h1>
+  <h1 id="title">Chargement...</h1>
 
-    <div class="controls">
+  <div id="status">
+    Initialisation...
+  </div>
 
-        <input
-            id="url"
-            type="text"
-            placeholder="Colle ton lien M3U8 ici"
-        >
+  <video
+    id="video"
+    controls
+    playsinline
+    preload="metadata">
+  </video>
 
-        <button onclick="playVideo()">
-            ▶ Lire
-        </button>
+  <div id="sources" class="sources"></div>
 
-    </div>
-
-    <div id="status">
-        En attente d'une URL M3U8...
-    </div>
-
-    <video
-        id="video"
-        controls
-        playsinline
-    ></video>
+  <h3>Informations</h3>
+  <pre id="debug"></pre>
 
 </div>
 
 <script>
+const API_WORKER =
+  "https://watch-party-proxy.dahmani-jibril.workers.dev";
 
-const WORKER_URL =
-    "https://watch-party-proxy.dahmani-jibril.workers.dev";
+const HLS_WORKER =
+  "https://watch-party-proxy.dahmani-jibril.workers.dev";
 
+const params = new URLSearchParams(window.location.search);
+
+const tmdbId = params.get("tmdbId");
+const movieTitle = params.get("title") || "";
+const year = params.get("year") || "";
+const proof = params.get("proof");
+
+const titleElement = document.getElementById("title");
+const statusElement = document.getElementById("status");
+const video = document.getElementById("video");
+const sourcesElement = document.getElementById("sources");
+const debugElement = document.getElementById("debug");
+
+titleElement.textContent =
+  movieTitle || `Film ${tmdbId || ""}`;
+
+function status(text) {
+  statusElement.textContent = text;
+}
+
+function debug(data) {
+  try {
+    debugElement.textContent =
+      typeof data === "string"
+        ? data
+        : JSON.stringify(data, null, 2);
+  } catch {
+    debugElement.textContent = String(data);
+  }
+}
+
+function showError(message) {
+  status("❌ " + message);
+  console.error(message);
+}
+
+/*
+ * Décodage Base64 UTF-8.
+ */
+function decodeBase64(value) {
+  const binary = atob(value);
+
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+/*
+ * La réponse peut être du NDJSON :
+ *
+ * BASE64(JSON)
+ * BASE64(JSON)
+ * BASE64(JSON)
+ *
+ * ou parfois une seule grosse chaîne Base64.
+ */
+function parseSourcesResponse(text) {
+
+  text = text.trim();
+
+  if (!text) {
+    return [];
+  }
+
+  const lines = text
+    .split(/\r?\n/)
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  const result = [];
+
+  for (const line of lines) {
+
+    try {
+      /*
+       * Cas JSON direct.
+       */
+      if (
+        line.startsWith("{") ||
+        line.startsWith("[")
+      ) {
+        result.push(JSON.parse(line));
+        continue;
+      }
+
+      /*
+       * Cas Base64.
+       */
+      const decoded = decodeBase64(line);
+
+      /*
+       * Le Base64 peut lui-même contenir
+       * plusieurs lignes JSON.
+       */
+      const decodedLines = decoded
+        .split(/\r?\n/)
+        .map(x => x.trim())
+        .filter(Boolean);
+
+      for (const decodedLine of decodedLines) {
+        try {
+          result.push(JSON.parse(decodedLine));
+        } catch {
+          // ignore ligne invalide
+        }
+      }
+
+    } catch (e) {
+      console.warn("Impossible de décoder une ligne", e);
+    }
+  }
+
+  return result;
+}
+
+/*
+ * Récupère tous les items présents dans
+ * les différents groupes Paris/Lisbonne/etc.
+ */
+function flattenItems(groups) {
+
+  const items = [];
+
+  for (const group of groups) {
+
+    if (Array.isArray(group)) {
+      items.push(...group);
+      continue;
+    }
+
+    if (Array.isArray(group.items)) {
+      items.push(...group.items);
+    }
+  }
+
+  return items;
+}
+
+/*
+ * Classement des sources.
+ *
+ * Priorité :
+ * 1. Vidzy
+ * 2. HLS
+ * 3. HD
+ * 4. VOSTFR
+ * 5. proxifié
+ */
+function sourceScore(source) {
+
+  let score = 0;
+
+  if (source.service === "vidzy") score += 1000;
+
+  if (source.type === "hls") score += 300;
+
+  if (source.quality === "hd") score += 100;
+
+  if (source.language === "vostfr") score += 50;
+
+  if (source.proxied === true) score += 25;
+
+  return score;
+}
+
+/*
+ * Transforme l'URL source en URL HLS
+ * utilisable par ton Worker.
+ */
+function makeHlsUrl(sourceUrl) {
+
+  return HLS_WORKER +
+    "/?url=" +
+    encodeURIComponent(sourceUrl);
+}
+
+/*
+ * Lecture HLS.
+ */
 let hls = null;
 
-const video =
-    document.getElementById("video");
+function playSource(source) {
 
-const input =
-    document.getElementById("url");
+  if (!source || !source.url) {
+    showError("Source invalide.");
+    return;
+  }
 
-const status =
-    document.getElementById("status");
+  const sourceUrl = source.url;
 
+  status(
+    `▶ Lecture : ${source.service} / ` +
+    `${source.language || "?"} / ` +
+    `${source.quality || "?"}`
+  );
 
-function setStatus(text) {
-    status.textContent = text;
-}
+  /*
+   * Si c'est déjà un HLS.
+   */
+  const isHls =
+    source.type === "hls" ||
+    /\.m3u8(\?|$)/i.test(sourceUrl);
 
+  if (!isHls) {
 
-function playVideo() {
-
-    const source =
-        input.value.trim();
-
-    if (!source) {
-
-        setStatus(
-            "❌ Colle une URL M3U8."
-        );
-
-        return;
-    }
-
-    if (!source.startsWith("https://")) {
-
-        setStatus(
-            "❌ L'URL doit commencer par https://"
-        );
-
-        return;
-    }
-
-
-    // Détruire l'ancien lecteur
-    if (hls) {
-
-        hls.destroy();
-
-        hls = null;
-    }
-
-
-    video.pause();
-
-    video.removeAttribute("src");
-
-    video.load();
-
-
-    // URL du Worker
-    const proxyUrl =
-        WORKER_URL +
-        "/?url=" +
-        encodeURIComponent(source);
-
-
-    setStatus(
-        "⏳ Chargement du flux..."
+    /*
+     * Une source embed n'est pas directement
+     * lisible par hls.js.
+     */
+    showError(
+      "Cette source est un embed et non une URL HLS directe."
     );
 
+    debug(source);
 
-    // Firefox / Chrome / Edge
-    if (Hls.isSupported()) {
+    return;
+  }
 
-        hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: false,
-            backBufferLength: 90
-        });
+  /*
+   * Toutes les requêtes HLS passent par ton Worker.
+   */
+  const proxiedUrl = makeHlsUrl(sourceUrl);
 
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
 
-        hls.loadSource(proxyUrl);
+  if (Hls.isSupported()) {
 
-        hls.attachMedia(video);
+    hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
 
+      xhrSetup: function(xhr) {
+        xhr.withCredentials = false;
+      }
+    });
 
-        hls.on(
-            Hls.Events.MANIFEST_PARSED,
-            function () {
+    hls.on(Hls.Events.ERROR, function(event, data) {
 
-                setStatus(
-                    "▶ Vidéo prête"
-                );
+      console.error("HLS ERROR", data);
 
-                video.play().catch(() => {});
+      if (data.fatal) {
 
-            }
-        );
+        switch (data.type) {
 
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            status(
+              "❌ Erreur réseau HLS. " +
+              "Vérifie le Worker ou l'URL source."
+            );
 
-        hls.on(
-            Hls.Events.ERROR,
-            function(event, data) {
+            break;
 
-                console.error(
-                    "HLS ERROR:",
-                    data
-                );
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            status(
+              "⚠️ Erreur média. Tentative de récupération..."
+            );
 
-                if (data.fatal) {
+            hls.recoverMediaError();
+            break;
 
-                    setStatus(
-                        "❌ Erreur : " +
-                        data.details
-                    );
+          default:
+            status("❌ Erreur HLS fatale.");
+            hls.destroy();
+            break;
+        }
+      }
+    });
 
-                }
+    hls.loadSource(proxiedUrl);
 
-            }
-        );
+    hls.attachMedia(video);
 
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
 
-    // Safari / iPhone / iPad
-    } else if (
-        video.canPlayType(
-            "application/vnd.apple.mpegurl"
-        )
-    ) {
+      status(
+        `✅ Source chargée : ${source.service} ` +
+        `${source.language || ""} ` +
+        `${source.quality || ""}`
+      );
 
-        video.src = proxyUrl;
+      video.play().catch(() => {});
+    });
 
-        video.addEventListener(
-            "loadedmetadata",
-            function() {
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
 
-                setStatus(
-                    "▶ Vidéo prête"
-                );
+    /*
+     * Safari / navigateurs avec HLS natif.
+     */
+    video.src = proxiedUrl;
 
-                video.play().catch(() => {});
+    video.addEventListener(
+      "loadedmetadata",
+      function() {
+        video.play().catch(() => {});
+      },
+      { once: true }
+    );
 
-            },
-            { once: true }
-        );
+  } else {
 
+    showError(
+      "Ce navigateur ne supporte pas HLS."
+    );
+  }
 
-    } else {
-
-        setStatus(
-            "❌ HLS n'est pas supporté par ce navigateur."
-        );
-
-    }
+  debug({
+    selectedSource: source,
+    hlsUrl: proxiedUrl
+  });
 }
 
+/*
+ * Affiche les boutons des sources.
+ */
+function renderSources(sources) {
 
-// Touche Entrée
-input.addEventListener(
-    "keydown",
-    function(event) {
+  sourcesElement.innerHTML = "";
 
-        if (event.key === "Enter") {
-            playVideo();
+  sources.forEach((source, index) => {
+
+    const button = document.createElement("button");
+
+    button.textContent =
+      `${source.service || "?"} ` +
+      `${source.language || ""} ` +
+      `${source.quality || ""}`;
+
+    button.addEventListener("click", function() {
+
+      document
+        .querySelectorAll(".sources button")
+        .forEach(b => b.classList.remove("active"));
+
+      button.classList.add("active");
+
+      playSource(source);
+    });
+
+    sourcesElement.appendChild(button);
+
+    /*
+     * Première source automatiquement.
+     */
+    if (index === 0) {
+      button.classList.add("active");
+    }
+  });
+}
+
+/*
+ * Appel de ton Worker.
+ */
+async function loadSources() {
+
+  if (!tmdbId) {
+    showError(
+      "Paramètre tmdbId manquant dans l'URL."
+    );
+    return;
+  }
+
+  if (!proof) {
+    showError(
+      "Paramètre proof manquant dans l'URL."
+    );
+    return;
+  }
+
+  status("🔎 Récupération des sources...");
+
+  const apiUrl =
+    API_WORKER +
+    "/sources" +
+    "?tmdbId=" +
+    encodeURIComponent(tmdbId) +
+    "&type=movie" +
+    "&title=" +
+    encodeURIComponent(movieTitle) +
+    "&releaseYear=" +
+    encodeURIComponent(year) +
+    "&proof=" +
+    encodeURIComponent(proof);
+
+  try {
+
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        "Accept": "application/x-ndjson"
+      }
+    });
+
+    if (!response.ok) {
+
+      const errorText =
+        await response.text();
+
+      throw new Error(
+        `HTTP ${response.status}: ${errorText}`
+      );
+    }
+
+    const text =
+      await response.text();
+
+    debug({
+      apiResponseLength: text.length
+    });
+
+    const groups =
+      parseSourcesResponse(text);
+
+    const allSources =
+      flattenItems(groups);
+
+    /*
+     * On garde uniquement les sources utilisables
+     * par hls.js.
+     */
+    const hlsSources =
+      allSources.filter(source => {
+
+        if (!source || !source.url) {
+          return false;
         }
 
-    }
-);
+        if (source.service !== "vidzy") {
+          return false;
+        }
 
+        return (
+          source.type === "hls" ||
+          /\.m3u8(\?|$)/i.test(source.url)
+        );
+      });
+
+    /*
+     * Classement.
+     */
+    hlsSources.sort(
+      (a, b) =>
+        sourceScore(b) - sourceScore(a)
+    );
+
+    if (!hlsSources.length) {
+
+      throw new Error(
+        "Aucune source Vidzy HLS trouvée."
+      );
+    }
+
+    status(
+      `✅ ${hlsSources.length} source(s) Vidzy trouvée(s).`
+    );
+
+    renderSources(hlsSources);
+
+    /*
+     * Lecture automatique de la meilleure.
+     */
+    playSource(hlsSources[0]);
+
+  } catch (error) {
+
+    console.error(error);
+
+    showError(error.message);
+
+    debug({
+      error: error.message
+    });
+  }
+}
+
+loadSources();
 </script>
 
 </body>
