@@ -18,7 +18,7 @@ const WORKER_BASE =
   "https://watch-party-proxy.dahmani-jibril.workers.dev";
 
 const TMDB_API_KEY =
-  "TON_TMDB_API_KEY";
+  "09c2df46123d7a1da00dbb9e60a36a31";
 
 const TMDB_BASE =
   "https://api.themoviedb.org/3";
